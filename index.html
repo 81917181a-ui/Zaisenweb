@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>列車運行・在線リアルタイムシミュレーター</title>
+    <title>列車運行・在線リアルタイムシミュレーター（秒単位対応）</title>
     <style>
         body {
             font-family: sans-serif;
@@ -11,7 +11,6 @@
             background: #f0f2f5;
             color: #333;
         }
-        /* ヘッダー・タブ */
         header {
             background: #00b16b;
             color: white;
@@ -45,8 +44,6 @@
             background: white;
             color: #00b16b;
         }
-        
-        /* 画面コンテナ */
         .screen {
             display: none;
             padding: 20px;
@@ -54,8 +51,6 @@
         .screen.active {
             display: block;
         }
-
-        /* カードデザイン */
         .setting-card {
             background: white;
             padding: 15px;
@@ -69,7 +64,7 @@
             margin-bottom: 10px;
             align-items: center;
         }
-        input, select {
+        input {
             padding: 8px;
             border: 1px solid #ccc;
             border-radius: 4px;
@@ -85,7 +80,7 @@
         }
         button.action-btn:hover { background: #008f56; }
 
-        /* --- 在線画面（横長路線図・駅間対応） --- */
+        /* 在線画面（路線図） */
         .route-scroll-container {
             overflow-x: auto;
             background: white;
@@ -101,7 +96,6 @@
             min-width: max-content;
             padding: 30px 0;
         }
-        /* 緑色の横棒ベース */
         .horizontal-line-wrapper::before {
             content: '';
             position: absolute;
@@ -139,15 +133,16 @@
             font-weight: bold;
             text-align: center;
         }
-        /* 駅間にいる電車の表示エリア */
         .track-interval {
-            width: 100px;
+            width: 120px;
             height: 40px;
             position: relative;
             display: flex;
             justify-content: center;
             align-items: center;
             z-index: 3;
+            flex-direction: column;
+            gap: 4px;
         }
         .train-badge {
             background: #2c3e50;
@@ -156,7 +151,6 @@
             border-radius: 10px;
             font-size: 0.75rem;
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            cursor: pointer;
         }
         .train-at-station {
             position: absolute;
@@ -172,7 +166,7 @@
 <body>
 
     <header>
-        <h2>運行シミュレーター</h2>
+        <h2>運行シミュレーター (JST)</h2>
         <div class="header-right">
             <div id="live-clock">--:--:--</div>
             <div class="tab-buttons">
@@ -186,12 +180,10 @@
     <!-- 【1. 在線画面】 -->
     <div id="screen-zaisen" class="screen active">
         <h2 id="display-route-title">マイ路線</h2>
-        <p style="color: #666; font-size: 0.9rem;">日本時間と連動して電車がリアルタイムに移動します。</p>
+        <p style="color: #666; font-size: 0.9rem;">日本時間（JST）と秒単位で連動して電車がリアルタイムに移動します。</p>
         
         <div class="route-scroll-container">
-            <div class="horizontal-line-wrapper" id="route-line-view">
-                <!-- 動的に駅と駅間が描画されます -->
-            </div>
+            <div class="horizontal-line-wrapper" id="route-line-view"></div>
         </div>
     </div>
 
@@ -200,7 +192,7 @@
         <div class="setting-card">
             <h3>ファイル一括操作</h3>
             <button class="action-btn" onclick="exportJSON()">ファイル保存</button>
-            <input type="file" id="import-file" onchange="importJSON(event)" style="margin-left: 10px;">
+            <input type="file" id="import-file-setting" onchange="importJSON(event)" style="margin-left: 10px;">
         </div>
 
         <div class="setting-card">
@@ -215,7 +207,13 @@
     <!-- 【3. ダイヤ設定画面】 -->
     <div id="screen-dia" class="screen">
         <div class="setting-card">
-            <h3>列車・ダイヤ設定</h3>
+            <h3>ファイル一括操作</h3>
+            <button class="action-btn" onclick="exportJSON()">ファイル保存</button>
+            <input type="file" id="import-file-dia" onchange="importJSON(event)" style="margin-left: 10px;">
+        </div>
+
+        <div class="setting-card">
+            <h3>列車・ダイヤ設定（秒単位対応）</h3>
             <div id="train-inputs"></div>
             <button class="action-btn" onclick="addTrainRow()">＋ 列車追加</button>
             <button class="action-btn" style="background: #2980b9; margin-left: 10px;" onclick="saveDiaSettings()">ダイヤ設定を保存</button>
@@ -223,7 +221,6 @@
     </div>
 
     <script>
-        // アプリケーションデータ構造
         let appData = {
             name: "サンプル路線",
             stations: [
@@ -235,15 +232,15 @@
                 {
                     name: "列車1 (各停)",
                     schedule: [
-                        { stationIndex: 0, arr: "11:00", dep: "11:01" },
-                        { stationIndex: 1, arr: "11:03", dep: "11:04" },
-                        { stationIndex: 2, arr: "11:06", dep: "11:07" }
+                        { stationIndex: 0, arr: "11:00:00", dep: "11:00:30" },
+                        { stationIndex: 1, arr: "11:02:00", dep: "11:02:30" },
+                        { stationIndex: 2, arr: "11:04:00", dep: "11:04:30" }
                     ]
                 }
             ]
         };
 
-        // 毎秒の時計更新と位置計算ループ
+        // 毎秒の時計更新と位置計算
         setInterval(() => {
             updateClock();
             if (document.getElementById('screen-zaisen').classList.contains('active')) {
@@ -251,15 +248,43 @@
             }
         }, 1000);
 
+        // 日本時間(JST)の取得
         function updateClock() {
             const now = new Date();
-            const hours = String(now.getHours()).padStart(2, '0');
-            const minutes = String(now.getMinutes()).padStart(2, '0');
-            const seconds = String(now.getSeconds()).padStart(2, '0');
-            document.getElementById('live-clock').innerText = `${hours}:${minutes}:${seconds}`;
+            const jstString = now.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour12: false });
+            document.getElementById('live-clock').innerText = jstString;
         }
 
-        // 画面切り替え
+        function getCurrentTimeSec() {
+            const now = new Date();
+            // JST基準の時分秒を取得
+            const jstFormatter = new Intl.DateTimeFormat('ja-JP', {
+                timeZone: 'Asia/Tokyo',
+                hour: 'numeric',
+                minute: 'numeric',
+                second: 'numeric',
+                hour12: false
+            });
+            const parts = jstFormatter.formatToParts(now);
+            let h = 0, m = 0, s = 0;
+            parts.forEach(p => {
+                if (p.type === 'hour') h = parseInt(p.value, 10);
+                if (p.type === 'minute') m = parseInt(p.value, 10);
+                if (p.type === 'second') s = parseInt(p.value, 10);
+            });
+            return h * 3600 + m * 60 + s;
+        }
+
+        function timeToSec(timeStr) {
+            if (!timeStr) return -1;
+            const parts = timeStr.split(':');
+            if (parts.length < 2) return -1;
+            const h = parseInt(parts[0], 10) || 0;
+            const m = parseInt(parts[1], 10) || 0;
+            const s = parseInt(parts[2], 10) || 0;
+            return h * 3600 + m * 60 + s;
+        }
+
         function switchScreen(target) {
             ['zaisen', 'setting', 'dia'].forEach(s => {
                 document.getElementById(`screen-${s}`).classList.remove('active');
@@ -273,7 +298,7 @@
             if (target === 'zaisen') renderZaisen();
         }
 
-        // --- 路線設定ロジック ---
+        // --- 路線設定フォーム ---
         function renderSettingForm() {
             document.getElementById('route-title').value = appData.name;
             const container = document.getElementById('station-inputs');
@@ -312,18 +337,18 @@
             switchScreen('zaisen');
         }
 
-        // --- ダイヤ設定ロジック ---
+        // --- ダイヤ設定フォーム（秒対応） ---
         function renderDiaForm() {
             const container = document.getElementById('train-inputs');
             container.innerHTML = '';
             appData.trains.forEach((train, tIdx) => {
                 let schedHtml = '';
                 appData.stations.forEach((st, sIdx) => {
-                    const found = train.schedule.find(sc => sc.stationIndex === sIdx) || { arr: "", dep: "" };
+                    const found = train.schedule.find(sc => sc.stationIndex === sIdx) || { arr: "11:00:00", dep: "11:00:30" };
                     schedHtml += `
                         <div style="margin-left: 20px; margin-bottom: 5px; font-size:0.9rem;">
-                            <b>${st.name}</b> - 着: <input type="time" value="${found.arr}" id="t-${tIdx}-s-${sIdx}-arr"> 
-                            発: <input type="time" value="${found.dep}" id="t-${tIdx}-s-${sIdx}-dep">
+                            <b>${st.name}</b> - 着: <input type="text" value="${found.arr}" id="t-${tIdx}-s-${sIdx}-arr" placeholder="11:00:00" style="width:90px;"> 
+                            発: <input type="text" value="${found.dep}" id="t-${tIdx}-s-${sIdx}-dep" placeholder="11:00:30" style="width:90px;">
                         </div>
                     `;
                 });
@@ -336,7 +361,7 @@
                         <input type="text" value="${train.name}" id="train-name-${tIdx}" style="font-weight:bold; flex:1;">
                         <button onclick="removeTrain(${tIdx})" style="background:#e74c3c; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">列車削除</button>
                     </div>
-                    <div style="margin-top:10px;">各駅の時刻設定：</div>
+                    <div style="margin-top:10px;">各駅の時刻設定 (時:分:秒)：</div>
                     ${schedHtml}
                 `;
                 container.appendChild(card);
@@ -346,7 +371,7 @@
         function addTrainRow() {
             appData.trains.push({
                 name: "新規列車",
-                schedule: appData.stations.map((_, idx) => ({ stationIndex: idx, arr: "12:00", dep: "12:01" }))
+                schedule: appData.stations.map((_, idx) => ({ stationIndex: idx, arr: "12:00:00", dep: "12:00:30" }))
             });
             renderDiaForm();
         }
@@ -373,29 +398,16 @@
             switchScreen('zaisen');
         }
 
-        // --- 在線・走行ロジック（時間連動） ---
-        function timeToSec(timeStr) {
-            if (!timeStr) return -1;
-            const parts = timeStr.split(':');
-            return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60;
-        }
-
-        function getCurrentTimeSec() {
-            const now = new Date();
-            return now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-        }
-
+        // --- 在線・走行ロジック ---
         function renderZaisen() {
             loadStorage();
             document.getElementById('display-route-title').innerText = appData.name;
             const lineView = document.getElementById('route-line-view');
             lineView.innerHTML = '';
 
-            // 各駅と駅間のスロットを準備
             const currentSec = getCurrentTimeSec();
+            let trainPositions = {};
 
-            // 列車ごとの現在地を計算
-            let trainPositions = {}; // stationIndex または "between_i_i+1"
             appData.trains.forEach(train => {
                 const pos = calculateTrainPosition(train, currentSec);
                 if (pos) {
@@ -404,9 +416,7 @@
                 }
             });
 
-            // 描画ループ (駅 と 駅間 を交互に配置)
             appData.stations.forEach((st, idx) => {
-                // 1. 駅の描画
                 const stNode = document.createElement('div');
                 stNode.className = 'station-item';
                 
@@ -424,7 +434,6 @@
                 `;
                 lineView.appendChild(stNode);
 
-                // 2. 駅間の描画 (最後の駅以外)
                 if (idx < appData.stations.length - 1) {
                     const intervalNode = document.createElement('div');
                     intervalNode.className = 'track-interval';
@@ -441,7 +450,6 @@
             });
         }
 
-        // 電車の位置を判定するコアロジック
         function calculateTrainPosition(train, currentSec) {
             const sched = train.schedule;
             if (!sched || sched.length === 0) return null;
@@ -451,20 +459,19 @@
                 const arrSec = timeToSec(currentSt.arr);
                 const depSec = timeToSec(currentSt.dep);
 
-                // 駅に到着している判定 (到着時刻 〜 発車時刻)
+                // 駅にいる判定
                 if (arrSec !== -1 && depSec !== -1 && currentSec >= arrSec && currentSec <= depSec) {
                     return { key: `st_${currentSt.stationIndex}` };
                 }
 
-                // 次の駅が存在する場合、駅間（走行中）の判定
+                // 駅間にいる判定
                 if (i < sched.length - 1) {
                     const nextSt = sched[i + 1];
                     const nextArrSec = timeToSec(nextSt.arr);
                     const currentDepSec = depSec !== -1 ? depSec : arrSec;
 
                     if (currentDepSec !== -1 && nextArrSec !== -1) {
-                        // 出発の1分前(-60秒)から、次の駅の到着時刻までを走行中・準備中とする
-                        if (currentSec >= currentDepSec - 60 && currentSec < nextArrSec) {
+                        if (currentSec >= currentDepSec && currentSec < nextArrSec) {
                             return { key: `between_${currentSt.stationIndex}_${nextSt.stationIndex}` };
                         }
                     }
@@ -473,7 +480,7 @@
             return null;
         }
 
-        // --- データ保存・読み込み ---
+        // --- 保存・読込 ---
         function saveStorage() {
             localStorage.setItem('railwayAppData', JSON.stringify(appData));
         }
@@ -510,7 +517,6 @@
             reader.readAsText(file);
         }
 
-        // 初期ロード
         loadStorage();
         renderZaisen();
     </script>
