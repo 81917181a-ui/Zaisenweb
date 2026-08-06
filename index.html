@@ -6,15 +6,15 @@
     <title>運行管理システム</title>
     <style>
         body {
-            font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+            font-family: sans-serif;
             margin: 0;
-            background: #f4f7f6;
-            color: #2c3e50;
+            background: #f0f2f5;
+            color: #333;
         }
         header {
-            background: #2c3e50;
+            background: #1e88e5;
             color: white;
-            padding: 15px 20px;
+            padding: 10px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -25,24 +25,24 @@
             gap: 15px;
         }
         #live-clock {
-            font-family: monospace;
-            font-size: 1.2rem;
-            background: rgba(0,0,0,0.3);
+            font-size: 1.1rem;
+            font-weight: bold;
+            background: rgba(0,0,0,0.2);
             padding: 5px 10px;
             border-radius: 4px;
         }
         .tab-buttons button {
-            background: #34495e;
+            background: rgba(255,255,255,0.2);
             border: none;
-            color: #bdc3c7;
-            padding: 10px 15px;
+            color: white;
+            padding: 8px 12px;
             cursor: pointer;
             border-radius: 4px;
             font-weight: bold;
         }
         .tab-buttons button.active {
-            background: #3498db;
-            color: white;
+            background: white;
+            color: #1e88e5;
         }
         .screen {
             display: none;
@@ -53,11 +53,10 @@
         }
         .setting-card {
             background: white;
-            padding: 20px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-            border-left: 5px solid #3498db;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
         .row-group {
             display: flex;
@@ -67,32 +66,37 @@
         }
         input {
             padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 2px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
         }
         button.action-btn {
-            background: #27ae60;
+            background: #1e88e5;
             color: white;
             border: none;
             padding: 10px 15px;
-            border-radius: 2px;
+            border-radius: 4px;
             cursor: pointer;
+            font-weight: bold;
         }
+        button.action-btn:hover { background: #1565c0; }
         button.reset-btn {
             background: #e74c3c;
             color: white;
             border: none;
             padding: 10px 15px;
-            border-radius: 2px;
+            border-radius: 4px;
             cursor: pointer;
+            font-weight: bold;
         }
+        button.reset-btn:hover { background: #c0392b; }
 
-        /* 路線図表示 */
+        /* 在線画面（路線図） */
         .route-scroll-container {
             overflow-x: auto;
             background: white;
-            padding: 40px 20px;
-            border-radius: 4px;
+            padding: 50px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             white-space: nowrap;
         }
         .horizontal-line-wrapper {
@@ -108,8 +112,8 @@
             top: 68px;
             left: 30px;
             right: 30px;
-            height: 4px;
-            background: #7f8c8d;
+            height: 6px;
+            background: #1e88e5;
             z-index: 1;
         }
         .station-item {
@@ -117,25 +121,55 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            width: 120px;
+            width: 140px;
             z-index: 2;
         }
         .station-circle {
-            width: 24px;
-            height: 24px;
+            width: 36px;
+            height: 36px;
             background: white;
-            border: 3px solid #2c3e50;
+            border: 4px solid #1e88e5;
             border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: #1e88e5;
             margin-bottom: 10px;
+        }
+        .station-label {
+            font-size: 0.85rem;
+            font-weight: bold;
+            text-align: center;
+        }
+        .track-interval {
+            width: 120px;
+            height: 40px;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 3;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .train-badge {
+            background: #1565c0;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
         .train-at-station {
             position: absolute;
-            top: -40px;
-            background: #3498db;
+            top: -35px;
+            background: #0d47a1;
             color: white;
-            padding: 2px 8px;
-            font-size: 0.75rem;
-            border-radius: 2px;
+            padding: 3px 6px;
+            border-radius: 8px;
+            font-size: 0.7rem;
         }
     </style>
 </head>
@@ -147,63 +181,211 @@
             <div id="live-clock">--:--:--</div>
             <div class="tab-buttons">
                 <button id="btn-zaisen" class="active" onclick="switchScreen('zaisen')">運行状況</button>
-                <button id="btn-setting" onclick="switchScreen('setting')">路線定義</button>
-                <button id="btn-dia" onclick="switchScreen('dia')">ダイヤ編成</button>
+                <button id="btn-setting" onclick="switchScreen('setting')">路線設定</button>
+                <button id="btn-dia" onclick="switchScreen('dia')">ダイヤ設定</button>
             </div>
         </div>
     </header>
 
+    <!-- 【1. 運行状況画面】 -->
     <div id="screen-zaisen" class="screen active">
-        <h3 id="display-route-title">運行状況モニター</h3>
+        <h2 id="display-route-title">マイ路線</h2>
+        <p style="color: #666; font-size: 0.9rem;">日本時間（JST）と秒単位で連動して列車がリアルタイムに運行します。</p>
+        
         <div class="route-scroll-container">
             <div class="horizontal-line-wrapper" id="route-line-view"></div>
         </div>
     </div>
 
+    <!-- 【2. 路線設定画面】 -->
     <div id="screen-setting" class="screen">
         <div class="setting-card">
-            <h3>マスターデータ管理</h3>
-            <button class="action-btn" onclick="exportJSON()">データエクスポート</button>
-            <input type="file" id="import-file-setting" onchange="importJSON(event)">
-            <button class="reset-btn" onclick="resetAllData()">システム全リセット</button>
+            <h3>ファイル・データ操作</h3>
+            <button class="action-btn" onclick="exportJSON()">ファイル保存</button>
+            <input type="file" id="import-file-setting" onchange="importJSON(event)" style="margin-left: 10px;">
+            <button class="reset-btn" style="float: right;" onclick="resetAllData()">すべてリセット</button>
         </div>
+
         <div class="setting-card">
-            <h3>駅・区間定義</h3>
-            <input type="text" id="route-title" placeholder="路線名" style="width: 300px; margin-bottom: 10px;">
+            <h3>駅・区間構造の設定</h3>
+            <input type="text" id="route-title" placeholder="路線名" value="サンプル路線" style="width: 100%; margin-bottom: 15px;">
             <div id="station-inputs"></div>
-            <button class="action-btn" onclick="addStationRow()">＋ 区間追加</button>
-            <button class="action-btn" style="background:#2980b9;" onclick="saveRouteSettings()">設定反映</button>
+            <button class="action-btn" onclick="addStationRow()">＋ 区間(駅)追加</button>
+            <button class="action-btn" style="background: #0d47a1; margin-left: 10px;" onclick="saveRouteSettings()">路線設定を保存</button>
         </div>
     </div>
 
+    <!-- 【3. ダイヤ設定画面】 -->
     <div id="screen-dia" class="screen">
         <div class="setting-card">
-            <h3>列車ダイヤ編成</h3>
+            <h3>ファイル・データ操作</h3>
+            <button class="action-btn" onclick="exportJSON()">ファイル保存</button>
+            <input type="file" id="import-file-dia" onchange="importJSON(event)" style="margin-left: 10px;">
+            <button class="reset-btn" style="float: right;" onclick="resetAllData()">すべてリセット</button>
+        </div>
+
+        <div class="setting-card">
+            <h3>列車・ダイヤ設定（自動連動対応）</h3>
             <div id="train-inputs"></div>
             <button class="action-btn" onclick="addTrainRow()">＋ 列車追加</button>
-            <button class="action-btn" style="background:#2980b9;" onclick="saveDiaSettings()">ダイヤ確定</button>
+            <button class="action-btn" style="background: #0d47a1; margin-left: 10px;" onclick="saveDiaSettings()">ダイヤ設定を保存</button>
         </div>
     </div>
 
     <script>
         let defaultAppData = {
-            name: "標準路線",
-            stations: [{ name: "始発駅", code: "S01" }, { name: "終着駅", code: "S02" }],
-            trains: [{ name: "回送101", schedule: [{ stationIndex: 0, arr: "10:00:00", dep: "10:00:30" }, { stationIndex: 1, arr: "10:01:00", dep: "10:01:30" }] }]
+            name: "サンプル路線",
+            stations: [
+                { name: "東京", code: "T01" },
+                { name: "神田", code: "T02" },
+                { name: "秋葉原", code: "T03" }
+            ],
+            trains: [
+                {
+                    name: "列車1 (各停)",
+                    schedule: [
+                        { stationIndex: 0, arr: "11:00:00", dep: "11:00:30" },
+                        { stationIndex: 1, arr: "11:01:30", dep: "11:02:00" },
+                        { stationIndex: 2, arr: "11:03:00", dep: "11:03:30" }
+                    ]
+                }
+            ]
         };
+
         let appData = JSON.parse(JSON.stringify(defaultAppData));
 
         setInterval(() => {
             updateClock();
-            if (document.getElementById('screen-zaisen').classList.contains('active')) renderZaisen();
+            if (document.getElementById('screen-zaisen').classList.contains('active')) {
+                renderZaisen();
+            }
         }, 1000);
 
         function updateClock() {
             const now = new Date();
-            document.getElementById('live-clock').innerText = now.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour12: false });
+            const jstString = now.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour12: false });
+            document.getElementById('live-clock').innerText = jstString;
         }
 
-        // --- 自動計算ロジック ---
+        function getCurrentTimeSec() {
+            const now = new Date();
+            const jstFormatter = new Intl.DateTimeFormat('ja-JP', {
+                timeZone: 'Asia/Tokyo',
+                hour: 'numeric',
+                minute: 'numeric',
+                second: 'numeric',
+                hour12: false
+            });
+            const parts = jstFormatter.formatToParts(now);
+            let h = 0, m = 0, s = 0;
+            parts.forEach(p => {
+                if (p.type === 'hour') h = parseInt(p.value, 10);
+                if (p.type === 'minute') m = parseInt(p.value, 10);
+                if (p.type === 'second') s = parseInt(p.value, 10);
+            });
+            return h * 3600 + m * 60 + s;
+        }
+
+        function timeToSec(timeStr) {
+            if (!timeStr) return -1;
+            const parts = timeStr.split(':');
+            if (parts.length < 2) return -1;
+            const h = parseInt(parts[0], 10) || 0;
+            const m = parseInt(parts[1], 10) || 0;
+            const s = parseInt(parts[2], 10) || 0;
+            return h * 3600 + m * 60 + s;
+        }
+
+        function secToTime(totalSec) {
+            if (totalSec < 0) totalSec = 0;
+            const h = Math.floor(totalSec / 3600) % 24;
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        function switchScreen(target) {
+            ['zaisen', 'setting', 'dia'].forEach(s => {
+                document.getElementById(`screen-${s}`).classList.remove('active');
+                document.getElementById(`btn-${s}`).classList.remove('active');
+            });
+            document.getElementById(`screen-${target}`).classList.add('active');
+            document.getElementById(`btn-${target}`).classList.add('active');
+
+            if (target === 'setting') renderSettingForm();
+            if (target === 'dia') renderDiaForm();
+            if (target === 'zaisen') renderZaisen();
+        }
+
+        function renderSettingForm() {
+            document.getElementById('route-title').value = appData.name;
+            const container = document.getElementById('station-inputs');
+            container.innerHTML = '';
+            appData.stations.forEach((st, idx) => {
+                const row = document.createElement('div');
+                row.className = 'row-group';
+                row.innerHTML = `
+                    <span>駅 ${idx + 1}:</span>
+                    <input type="text" value="${st.name}" id="st-name-${idx}" placeholder="駅名" style="flex:2;">
+                    <input type="text" value="${st.code}" id="st-code-${idx}" placeholder="駅番号" style="flex:1;">
+                    <button onclick="removeStation(${idx})" style="background:#e74c3c; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer;">削除</button>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function addStationRow() {
+            appData.stations.push({ name: "新駅", code: "S--" });
+            renderSettingForm();
+        }
+
+        function removeStation(idx) {
+            appData.stations.splice(idx, 1);
+            renderSettingForm();
+        }
+
+        function saveRouteSettings() {
+            appData.name = document.getElementById('route-title').value;
+            appData.stations = appData.stations.map((_, idx) => ({
+                name: document.getElementById(`st-name-${idx}`).value,
+                code: document.getElementById(`st-code-${idx}`).value
+            }));
+            saveStorage();
+            alert('路線設定を保存しました！');
+            switchScreen('zaisen');
+        }
+
+        function renderDiaForm() {
+            const container = document.getElementById('train-inputs');
+            container.innerHTML = '';
+            appData.trains.forEach((train, tIdx) => {
+                let schedHtml = '';
+                appData.stations.forEach((st, sIdx) => {
+                    const found = train.schedule.find(sc => sc.stationIndex === sIdx) || { arr: "11:00:00", dep: "11:00:30" };
+                    schedHtml += `
+                        <div style="margin-left: 20px; margin-bottom: 5px; font-size:0.9rem;" id="row-${tIdx}-s-${sIdx}">
+                            <b>${st.name}</b> - 
+                            着: <input type="text" value="${found.arr}" id="t-${tIdx}-s-${sIdx}-arr" style="width:90px;" oninput="onTimeChanged(${tIdx}, ${sIdx})"> 
+                            発: <input type="text" value="${found.dep}" id="t-${tIdx}-s-${sIdx}-dep" style="width:90px;" oninput="onTimeChanged(${tIdx}, ${sIdx})">
+                        </div>
+                    `;
+                });
+
+                const card = document.createElement('div');
+                card.className = 'setting-card';
+                card.style.background = '#f9f9f9';
+                card.innerHTML = `
+                    <div class="row-group">
+                        <input type="text" value="${train.name}" id="train-name-${tIdx}" style="font-weight:bold; flex:1;">
+                        <button onclick="removeTrain(${tIdx})" style="background:#e74c3c; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">列車削除</button>
+                    </div>
+                    <div style="margin-top:10px;">各駅の時刻設定 (時:分:秒)：</div>
+                    ${schedHtml}
+                `;
+                container.appendChild(card);
+            });
+        }
+
         function onTimeChanged(tIdx, sIdx) {
             const depInput = document.getElementById(`t-${tIdx}-s-${sIdx}-dep`);
             if (!depInput) return;
@@ -219,79 +401,172 @@
                 const currentNextDepSec = timeToSec(nextDepInput.value);
                 const travelTime = (currentNextArrSec !== -1 && currentNextDepSec !== -1) ? (currentNextDepSec - currentNextArrSec) : 30;
 
-                nextArrInput.value = secToTime(depSec + 60);
-                nextDepInput.value = secToTime(depSec + 60 + travelTime);
+                const newArrSec = depSec + 60;
+                const newDepSec = newArrSec + travelTime;
+
+                nextArrInput.value = secToTime(newArrSec);
+                nextDepInput.value = secToTime(newDepSec);
+
                 onTimeChanged(tIdx, nextSIdx);
             }
         }
 
-        function timeToSec(str) { const p = str.split(':'); return parseInt(p[0])*3600 + parseInt(p[1])*60 + parseInt(p[2]); }
-        function secToTime(s) { const h = Math.floor(s/3600)%24, m = Math.floor((s%3600)/60), sec = s%60; return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; }
-
-        function switchScreen(target) {
-            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            document.querySelectorAll('.tab-buttons button').forEach(b => b.classList.remove('active'));
-            document.getElementById(`screen-${target}`).classList.add('active');
-            document.getElementById(`btn-${target}`).classList.add('active');
-            if (target === 'setting') renderSettingForm();
-            if (target === 'dia') renderDiaForm();
-        }
-
-        function renderSettingForm() {
-            document.getElementById('route-title').value = appData.name;
-            const container = document.getElementById('station-inputs');
-            container.innerHTML = '';
-            appData.stations.forEach((st, idx) => {
-                container.innerHTML += `<div class="row-group"><input value="${st.name}" id="st-name-${idx}"><input value="${st.code}" id="st-code-${idx}" style="width:60px;"></div>`;
+        function addTrainRow() {
+            appData.trains.push({
+                name: "新規列車",
+                schedule: appData.stations.map((_, idx) => ({ stationIndex: idx, arr: "12:00:00", dep: "12:00:30" }))
             });
+            renderDiaForm();
         }
 
-        function renderDiaForm() {
-            const container = document.getElementById('train-inputs');
-            container.innerHTML = '';
+        function removeTrain(tIdx) {
+            appData.trains.splice(tIdx, 1);
+            renderDiaForm();
+        }
+
+        function saveDiaSettings() {
             appData.trains.forEach((train, tIdx) => {
-                let sHtml = '';
-                appData.stations.forEach((st, sIdx) => {
-                    const sc = train.schedule.find(x => x.stationIndex === sIdx) || { arr: "10:00:00", dep: "10:00:30" };
-                    sHtml += `<div>${st.name} 着:<input value="${sc.arr}" id="t-${tIdx}-s-${sIdx}-arr" oninput="onTimeChanged(${tIdx}, ${sIdx})"> 発:<input value="${sc.dep}" id="t-${tIdx}-s-${sIdx}-dep" oninput="onTimeChanged(${tIdx}, ${sIdx})"></div>`;
+                train.name = document.getElementById(`train-name-${tIdx}`).value;
+                train.schedule = [];
+                appData.stations.forEach((_, sIdx) => {
+                    const arrVal = document.getElementById(`t-${tIdx}-s-${sIdx}-arr`).value;
+                    const depVal = document.getElementById(`t-${tIdx}-s-${sIdx}-dep`).value;
+                    if (arrVal || depVal) {
+                        train.schedule.push({ stationIndex: sIdx, arr: arrVal, dep: depVal });
+                    }
                 });
-                container.innerHTML += `<div class="setting-card"><b>${train.name}</b>${sHtml}</div>`;
             });
+            saveStorage();
+            alert('ダイヤ設定を保存しました！');
+            switchScreen('zaisen');
+        }
+
+        function renderZaisen() {
+            loadStorage();
+            document.getElementById('display-route-title').innerText = appData.name;
+            const lineView = document.getElementById('route-line-view');
+            lineView.innerHTML = '';
+
+            const currentSec = getCurrentTimeSec();
+            let trainPositions = {};
+
+            appData.trains.forEach(train => {
+                const pos = calculateTrainPosition(train, currentSec);
+                if (pos) {
+                    trainPositions[pos.key] = trainPositions[pos.key] || [];
+                    trainPositions[pos.key].push(train.name);
+                }
+            });
+
+            appData.stations.forEach((st, idx) => {
+                const stNode = document.createElement('div');
+                stNode.className = 'station-item';
+                
+                let trainAtStHtml = '';
+                if (trainPositions[`st_${idx}`]) {
+                    trainPositions[`st_${idx}`].forEach(tName => {
+                        trainAtStHtml += `<div class="train-at-station">🚃 ${tName}</div>`;
+                    });
+                }
+
+                stNode.innerHTML = `
+                    ${trainAtStHtml}
+                    <div class="station-circle">${st.code}</div>
+                    <div class="station-label">${st.name}</div>
+                `;
+                lineView.appendChild(stNode);
+
+                if (idx < appData.stations.length - 1) {
+                    const intervalNode = document.createElement('div');
+                    intervalNode.className = 'track-interval';
+                    
+                    let trainBetweenHtml = '';
+                    if (trainPositions[`between_${idx}_${idx+1}`]) {
+                        trainPositions[`between_${idx}_${idx+1}`].forEach(tName => {
+                            trainBetweenHtml += `<div class="train-badge">🚄 ${tName}</div>`;
+                        });
+                    }
+                    intervalNode.innerHTML = trainBetweenHtml;
+                    lineView.appendChild(intervalNode);
+                }
+            });
+        }
+
+        function calculateTrainPosition(train, currentSec) {
+            const sched = train.schedule;
+            if (!sched || sched.length === 0) return null;
+
+            for (let i = 0; i < sched.length; i++) {
+                const currentSt = sched[i];
+                const arrSec = timeToSec(currentSt.arr);
+                const depSec = timeToSec(currentSt.dep);
+
+                if (arrSec !== -1 && depSec !== -1 && currentSec >= arrSec && currentSec <= depSec) {
+                    return { key: `st_${currentSt.stationIndex}` };
+                }
+
+                if (i < sched.length - 1) {
+                    const nextSt = sched[i + 1];
+                    const nextArrSec = timeToSec(nextSt.arr);
+                    const currentDepSec = depSec !== -1 ? depSec : arrSec;
+
+                    if (currentDepSec !== -1 && nextArrSec !== -1) {
+                        if (currentSec >= currentDepSec && currentSec < nextArrSec) {
+                            return { key: `between_${currentSt.stationIndex}_${nextSt.stationIndex}` };
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        function saveStorage() {
+            localStorage.setItem('railwayAppData', JSON.stringify(appData));
+        }
+
+        function loadStorage() {
+            const saved = localStorage.getItem('railwayAppData');
+            if (saved) {
+                appData = JSON.parse(saved);
+            }
         }
 
         function resetAllData() {
-            if (confirm('システムを初期状態にリセットしますか？')) {
-                appData = JSON.parse(JSON.stringify(defaultAppData));
+            if (confirm('すべての路線・ダイヤデータを初期状態にリセットしますか？')) {
                 localStorage.removeItem('railwayAppData');
+                appData = JSON.parse(JSON.stringify(defaultAppData));
+                alert('データをリセットしました。');
                 switchScreen('zaisen');
             }
         }
-        
-        function saveRouteSettings() { alert('路線定義を更新しました。'); }
-        function saveDiaSettings() { alert('ダイヤ編成を確定しました。'); }
-        function addStationRow() { appData.stations.push({name: "新駅", code: "S--" }); renderSettingForm(); }
-        function addTrainRow() { appData.trains.push({name: "新列車", schedule: []}); renderDiaForm(); }
-        
-        function renderZaisen() {
-            const view = document.getElementById('route-line-view');
-            view.innerHTML = '';
-            appData.stations.forEach((st, i) => {
-                view.innerHTML += `<div class="station-item"><div class="station-circle"></div>${st.name}</div>`;
-            });
-        }
-        
+
         function exportJSON() {
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData));
-            const dl = document.createElement('a'); dl.setAttribute("href", dataStr); dl.setAttribute("download", "data.json"); dl.click();
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData, null, 2));
+            const dl = document.createElement('a');
+            dl.setAttribute("href", dataStr);
+            dl.setAttribute("download", "railway_data.json");
+            dl.click();
         }
 
-        function importJSON(e) {
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
             const reader = new FileReader();
-            reader.onload = (ev) => { appData = JSON.parse(ev.target.result); switchScreen('zaisen'); };
-            reader.readAsText(e.target.files[0]);
+            reader.onload = function(e) {
+                try {
+                    appData = JSON.parse(e.target.result);
+                    saveStorage();
+                    alert('ファイルを読み込みました！');
+                    switchScreen('zaisen');
+                } catch (err) {
+                    alert('読み込みに失敗しました。');
+                }
+            };
+            reader.readAsText(file);
         }
 
-        switchScreen('zaisen');
+        loadStorage();
+        renderZaisen();
     </script>
 </body>
 </html>
