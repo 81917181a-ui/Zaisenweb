@@ -2,29 +2,323 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>電車シミュレーター</title>
-    <link rel="stylesheet" href="style.css"> <!-- CSSは別ファイルに分けます -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>列車在線・路線設定シミュレーター</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            background: #f0f2f5;
+            color: #333;
+        }
+        /* ヘッダー・タブ */
+        header {
+            background: #00b16b;
+            color: white;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tab-buttons button {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 8px 15px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-left: 5px;
+            font-weight: bold;
+        }
+        .tab-buttons button.active {
+            background: white;
+            color: #00b16b;
+        }
+        
+        /* 画面コンテナ */
+        .screen {
+            display: none;
+            padding: 20px;
+        }
+        .screen.active {
+            display: block;
+        }
+
+        /* --- 設定画面のスタイル --- */
+        .setting-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .station-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+        input {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button.action-btn {
+            background: #00b16b;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button.action-btn:hover { background: #008f56; }
+
+        /* --- 在線画面（横長路線図）のスタイル --- */
+        .route-scroll-container {
+            overflow-x: auto;
+            background: white;
+            padding: 40px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            white-space: nowrap;
+        }
+        .horizontal-line {
+            position: relative;
+            display: flex;
+            align-items: center;
+            min-width: max-content;
+            padding: 20px 0;
+        }
+        /* 緑色の横棒 */
+        .horizontal-line::before {
+            content: '';
+            position: absolute;
+            top: 50px;
+            left: 20px;
+            right: 20px;
+            height: 6px;
+            background: #00b16b;
+            z-index: 1;
+        }
+        .station-node {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 120px;
+            z-index: 2;
+        }
+        /* 駅の丸印 */
+        .station-circle {
+            width: 36px;
+            height: 36px;
+            background: white;
+            border: 4px solid #00b16b;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: #00b16b;
+            margin-bottom: 10px;
+        }
+        .station-label {
+            font-size: 0.85rem;
+            font-weight: bold;
+            text-align: center;
+        }
+        /* 電車アイコン */
+        .train-badge {
+            background: #2c3e50;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            margin-bottom: 8px;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+    </style>
 </head>
 <body>
-    <h1>電車運行管理システム</h1>
 
-    <!-- 路線作成・管理エリア -->
-    <div id="controls">
-        <input type="text" id="route-name" placeholder="路線名">
-        <input type="text" id="stations" placeholder="駅名（カンマ区切り）">
-        <button onclick="saveRoute()">保存</button>
+    <header>
+        <h2>鉄道運行シミュレーター</h2>
+        <div class="tab-buttons">
+            <button id="btn-zaisen" class="active" onclick="switchScreen('zaisen')">在線画面</button>
+            <button id="btn-setting" onclick="switchScreen('setting')">設定画面</button>
+        </div>
+    </header>
+
+    <!-- 【設定画面】 -->
+    <div id="screen-setting" class="screen">
+        <div class="setting-card">
+            <h3>ファイル操作</h3>
+            <button class="action-btn" onclick="exportJSON()">ファイルとして保存</button>
+            <input type="file" id="import-file" onchange="importJSON(event)" style="margin-left: 10px;">
+        </div>
+
+        <div class="setting-card">
+            <h3>路線・区間設定</h3>
+            <input type="text" id="route-title" placeholder="路線名 (例: 千代田線)" value="千代田線" style="width: 100%; margin-bottom: 15px;">
+            
+            <div id="station-inputs">
+                <!-- JavaScriptで区間行が動的に生成されます -->
+            </div>
+            
+            <button class="action-btn" onclick="addStationRow()">＋ 区間追加</button>
+            <button class="action-btn" style="background: #2980b9; margin-left: 10px;" onclick="saveSettings()">設定を適用・保存</button>
+        </div>
     </div>
 
-    <!-- 路線図を表示するエリア -->
-    <div id="route-display"></div>
-
-    <!-- 列車詳細のポップアップ（最初は隠しておく） -->
-    <div id="popup" class="hidden">
-        <h2 id="popup-title"></h2>
-        <div id="popup-content"></div>
-        <button onclick="closePopup()">閉じる</button>
+    <!-- 【在線画面】 -->
+    <div id="screen-zaisen" class="screen active">
+        <h2 id="display-route-title">千代田線</h2>
+        <p style="color: #666; font-size: 0.9rem;">左右にスクロールして路線を確認できます。</p>
+        
+        <div class="route-scroll-container">
+            <div class="horizontal-line" id="route-line-view">
+                <!-- 横長の路線図がここに描画されます -->
+            </div>
+        </div>
     </div>
 
-    <script src="script.js"></script> <!-- JavaScriptを読み込み -->
+    <script>
+        // 初期データ（サンプル）
+        let routeData = {
+            name: "千代田線",
+            stations: [
+                { name: "北千住", code: "C18", hasTrain: false },
+                { name: "綾瀬", code: "C19", hasTrain: true, trainName: "代々木上原行き" },
+                { name: "北綾瀬", code: "C20", hasTrain: false }
+            ]
+        };
+
+        // 画面切り替え関数
+        function switchScreen(target) {
+            document.getElementById('screen-zaisen').classList.remove('active');
+            document.getElementById('screen-setting').classList.remove('active');
+            document.getElementById('btn-zaisen').classList.remove('active');
+            document.getElementById('btn-setting').classList.remove('active');
+
+            if (target === 'zaisen') {
+                document.getElementById('screen-zaisen').classList.add('active');
+                document.getElementById('btn-zaisen').classList.add('active');
+                renderZaisen();
+            } else {
+                document.getElementById('screen-setting').classList.add('active');
+                document.getElementById('btn-setting').classList.add('active');
+                renderSettingForm();
+            }
+        }
+
+        // --- 設定画面の描画 ---
+        function renderSettingForm() {
+            document.getElementById('route-title').value = routeData.name;
+            const container = document.getElementById('station-inputs');
+            container.innerHTML = '';
+
+            routeData.stations.forEach((st, index) => {
+                const row = document.createElement('div');
+                row.className = 'station-row';
+                row.innerHTML = `
+                    <span>区間 ${index + 1}:</span>
+                    <input type="text" placeholder="駅名 (例: 綾瀬)" value="${st.name}" id="st-name-${index}" style="flex:2;">
+                    <input type="text" placeholder="駅番号 (例: C19)" value="${st.code}" id="st-code-${index}" style="flex:1;">
+                    <label><input type="checkbox" id="st-train-${index}" ${st.hasTrain ? 'checked' : ''}> 電車あり</label>
+                    <button onclick="removeStationRow(${index})" style="background:#e74c3c; color:white; border:none; padding:8px; border-radius:4px; cursor:pointer;">削除</button>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function addStationRow() {
+            routeData.stations.push({ name: "新しい駅", code: "C--", hasTrain: false });
+            renderSettingForm();
+        }
+
+        function removeStationRow(index) {
+            routeData.stations.splice(index, 1);
+            renderSettingForm();
+        }
+
+        function saveSettings() {
+            routeData.name = document.getElementById('route-title').value;
+            routeData.stations = routeData.stations.map((st, index) => {
+                return {
+                    name: document.getElementById(`st-name-${index}`).value,
+                    code: document.getElementById(`st-code-${index}`).value,
+                    hasTrain: document.getElementById(`st-train-${index}`).checked,
+                    trainName: st.trainName || "代々木上原行き"
+                };
+            });
+            localStorage.setItem('railwayData', JSON.stringify(routeData));
+            alert('設定を保存しました！「在線画面」で確認できます。');
+            switchScreen('zaisen');
+        }
+
+        // --- 在線画面の描画（横長路線図） ---
+        function renderZaisen() {
+            // 保存データがあればロード
+            const saved = localStorage.getItem('railwayData');
+            if (saved) {
+                routeData = JSON.parse(saved);
+            }
+
+            document.getElementById('display-route-title').innerText = routeData.name;
+            const lineView = document.getElementById('route-line-view');
+            lineView.innerHTML = '';
+
+            routeData.stations.forEach((st) => {
+                const node = document.createElement('div');
+                node.className = 'station-node';
+
+                // 電車がいる場合、上のほうにアイコンを表示
+                let trainHtml = '';
+                if (st.hasTrain) {
+                    trainHtml = `<div class="train-badge" onclick="alert('${st.trainName} の詳細')">🚃 ${st.trainName}</div>`;
+                }
+
+                node.innerHTML = `
+                    ${trainHtml}
+                    <div class="station-circle">${st.code}</div>
+                    <div class="station-label">${st.name}</div>
+                `;
+                lineView.appendChild(node);
+            });
+        }
+
+        // --- ファイル保存・読み込み機能 ---
+        function exportJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(routeData, null, 2));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", "route_data.json");
+            dlAnchor.click();
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    routeData = JSON.parse(e.target.result);
+                    localStorage.setItem('railwayData', JSON.stringify(routeData));
+                    renderSettingForm();
+                    renderZaisen();
+                    alert('ファイルを読み込みました！');
+                } catch (err) {
+                    alert('ファイルの読み込みに失敗しました。');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // 初期化実行
+        renderZaisen();
+    </script>
 </body>
 </html>
