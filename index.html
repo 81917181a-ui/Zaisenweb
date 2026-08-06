@@ -189,7 +189,7 @@
 
     <!-- 【1. 運行状況画面】 -->
     <div id="screen-zaisen" class="screen active">
-        <h2 id="display-route-title">マイ路線</h2>
+        <h2 id="display-route-title">（路線名未設定）</h2>
         <p style="color: #666; font-size: 0.9rem;">日本時間（JST）と秒単位で連動して列車がリアルタイムに運行します。</p>
         
         <div class="route-scroll-container">
@@ -208,7 +208,7 @@
 
         <div class="setting-card">
             <h3>駅・区間構造の設定</h3>
-            <input type="text" id="route-title" placeholder="路線名" value="サンプル路線" style="width: 100%; margin-bottom: 15px;">
+            <input type="text" id="route-title" placeholder="路線名" value="" style="width: 100%; margin-bottom: 15px;">
             <div id="station-inputs"></div>
             <button class="action-btn" onclick="addStationRow()">＋ 区間(駅)追加</button>
             <button class="action-btn" style="background: #0d47a1; margin-left: 10px;" onclick="saveRouteSettings()">路線設定を保存</button>
@@ -225,7 +225,7 @@
         </div>
 
         <div class="setting-card">
-            <h3>列車・ダイヤ設定（自動連動対応）</h3>
+            <h3>列車・ダイヤ設定（通過チェック対応）</h3>
             <div id="train-inputs"></div>
             <button class="action-btn" onclick="addTrainRow()">＋ 列車追加</button>
             <button class="action-btn" style="background: #0d47a1; margin-left: 10px;" onclick="saveDiaSettings()">ダイヤ設定を保存</button>
@@ -233,26 +233,11 @@
     </div>
 
     <script>
-        let defaultAppData = {
-            name: "サンプル路線",
-            stations: [
-                { name: "東京", code: "T01" },
-                { name: "神田", code: "T02" },
-                { name: "秋葉原", code: "T03" }
-            ],
-            trains: [
-                {
-                    name: "列車1 (各停)",
-                    schedule: [
-                        { stationIndex: 0, arr: "11:00:00", dep: "11:00:30" },
-                        { stationIndex: 1, arr: "11:01:30", dep: "11:02:00" },
-                        { stationIndex: 2, arr: "11:03:00", dep: "11:03:30" }
-                    ]
-                }
-            ]
+        let appData = {
+            name: "（路線名未設定）",
+            stations: [],
+            trains: []
         };
-
-        let appData = JSON.parse(JSON.stringify(defaultAppData));
 
         setInterval(() => {
             updateClock();
@@ -318,7 +303,7 @@
         }
 
         function renderSettingForm() {
-            document.getElementById('route-title').value = appData.name;
+            document.getElementById('route-title').value = appData.name === "（路線名未設定）" ? "" : appData.name;
             const container = document.getElementById('station-inputs');
             container.innerHTML = '';
             appData.stations.forEach((st, idx) => {
@@ -345,7 +330,7 @@
         }
 
         function saveRouteSettings() {
-            appData.name = document.getElementById('route-title').value;
+            appData.name = document.getElementById('route-title').value || "（路線名未設定）";
             appData.stations = appData.stations.map((_, idx) => ({
                 name: document.getElementById(`st-name-${idx}`).value,
                 code: document.getElementById(`st-code-${idx}`).value
@@ -361,12 +346,16 @@
             appData.trains.forEach((train, tIdx) => {
                 let schedHtml = '';
                 appData.stations.forEach((st, sIdx) => {
-                    const found = train.schedule.find(sc => sc.stationIndex === sIdx) || { arr: "11:00:00", dep: "11:00:30" };
+                    const found = train.schedule.find(sc => sc.stationIndex === sIdx) || { arr: "11:00:00", dep: "11:00:30", type: "stop" };
+                    const isPass = found.type === "pass";
                     schedHtml += `
                         <div style="margin-left: 20px; margin-bottom: 5px; font-size:0.9rem;" id="row-${tIdx}-s-${sIdx}">
                             <b>${st.name}</b> - 
-                            着: <input type="text" value="${found.arr}" id="t-${tIdx}-s-${sIdx}-arr" style="width:90px;" oninput="onTimeChanged(${tIdx}, ${sIdx})"> 
-                            発: <input type="text" value="${found.dep}" id="t-${tIdx}-s-${sIdx}-dep" style="width:90px;" oninput="onTimeChanged(${tIdx}, ${sIdx})">
+                            <label style="margin-right:10px; cursor:pointer; color:#1e88e5; font-weight:bold;">
+                                <input type="checkbox" id="t-${tIdx}-s-${sIdx}-pass" ${isPass ? 'checked' : ''} onchange="onPassChecked(${tIdx}, ${sIdx})"> 通過
+                            </label>
+                            着: <input type="text" value="${found.arr}" id="t-${tIdx}-s-${sIdx}-arr" style="width:80px;" oninput="onTimeChanged(${tIdx}, ${sIdx})"> 
+                            発: <input type="text" value="${found.dep}" id="t-${tIdx}-s-${sIdx}-dep" style="width:80px;" oninput="onTimeChanged(${tIdx}, ${sIdx})">
                         </div>
                     `;
                 });
@@ -379,11 +368,22 @@
                         <input type="text" value="${train.name}" id="train-name-${tIdx}" style="font-weight:bold; flex:1;">
                         <button onclick="removeTrain(${tIdx})" style="background:#e74c3c; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">列車削除</button>
                     </div>
-                    <div style="margin-top:10px;">各駅の時刻設定 (時:分:秒)：</div>
+                    <div style="margin-top:10px;">各駅の通過チェック・時刻設定 (時:分:秒)：</div>
                     ${schedHtml}
                 `;
                 container.appendChild(card);
             });
+        }
+
+        function onPassChecked(tIdx, sIdx) {
+            const passCheck = document.getElementById(`t-${tIdx}-s-${sIdx}-pass`);
+            const arrInput = document.getElementById(`t-${tIdx}-s-${sIdx}-arr`);
+            const depInput = document.getElementById(`t-${tIdx}-s-${sIdx}-dep`);
+            if (passCheck && passCheck.checked) {
+                if (arrInput && depInput) {
+                    depInput.value = arrInput.value;
+                }
+            }
         }
 
         function onTimeChanged(tIdx, sIdx) {
@@ -414,7 +414,7 @@
         function addTrainRow() {
             appData.trains.push({
                 name: "新規列車",
-                schedule: appData.stations.map((_, idx) => ({ stationIndex: idx, arr: "12:00:00", dep: "12:00:30" }))
+                schedule: appData.stations.map((_, idx) => ({ stationIndex: idx, arr: "12:00:00", dep: "12:00:30", type: "stop" }))
             });
             renderDiaForm();
         }
@@ -429,10 +429,12 @@
                 train.name = document.getElementById(`train-name-${tIdx}`).value;
                 train.schedule = [];
                 appData.stations.forEach((_, sIdx) => {
+                    const passCheck = document.getElementById(`t-${tIdx}-s-${sIdx}-pass`);
+                    const typeVal = (passCheck && passCheck.checked) ? "pass" : "stop";
                     const arrVal = document.getElementById(`t-${tIdx}-s-${sIdx}-arr`).value;
                     const depVal = document.getElementById(`t-${tIdx}-s-${sIdx}-dep`).value;
                     if (arrVal || depVal) {
-                        train.schedule.push({ stationIndex: sIdx, arr: arrVal, dep: depVal });
+                        train.schedule.push({ stationIndex: sIdx, arr: arrVal, dep: depVal, type: typeVal });
                     }
                 });
             });
@@ -500,8 +502,10 @@
                 const currentSt = sched[i];
                 const arrSec = timeToSec(currentSt.arr);
                 const depSec = timeToSec(currentSt.dep);
+                const isPass = currentSt.type === "pass";
 
-                if (arrSec !== -1 && depSec !== -1 && currentSec >= arrSec && currentSec <= depSec) {
+                // 通過駅の場合は停車判定をスキップする
+                if (!isPass && arrSec !== -1 && depSec !== -1 && currentSec >= arrSec && currentSec <= depSec) {
                     return { key: `st_${currentSt.stationIndex}` };
                 }
 
@@ -529,7 +533,6 @@
             if (saved) {
                 appData = JSON.parse(saved);
             } else {
-                // 保存データがない（またはリセットされた）場合は完全に空っぽのデータにする
                 appData = {
                     name: "（路線名未設定）",
                     stations: [],
