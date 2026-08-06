@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>列車運行・在線リアルタイムシミュレーター（秒単位対応）</title>
+    <title>列車運行・在線リアルタイムシミュレーター（時刻自動連動）</title>
     <style>
         body {
             font-family: sans-serif;
@@ -213,7 +213,7 @@
         </div>
 
         <div class="setting-card">
-            <h3>列車・ダイヤ設定（秒単位対応）</h3>
+            <h3>列車・ダイヤ設定（自動連動対応）</h3>
             <div id="train-inputs"></div>
             <button class="action-btn" onclick="addTrainRow()">＋ 列車追加</button>
             <button class="action-btn" style="background: #2980b9; margin-left: 10px;" onclick="saveDiaSettings()">ダイヤ設定を保存</button>
@@ -233,8 +233,8 @@
                     name: "列車1 (各停)",
                     schedule: [
                         { stationIndex: 0, arr: "11:00:00", dep: "11:00:30" },
-                        { stationIndex: 1, arr: "11:02:00", dep: "11:02:30" },
-                        { stationIndex: 2, arr: "11:04:00", dep: "11:04:30" }
+                        { stationIndex: 1, arr: "11:01:30", dep: "11:02:00" },
+                        { stationIndex: 2, arr: "11:03:00", dep: "11:03:30" }
                     ]
                 }
             ]
@@ -248,7 +248,6 @@
             }
         }, 1000);
 
-        // 日本時間(JST)の取得
         function updateClock() {
             const now = new Date();
             const jstString = now.toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo', hour12: false });
@@ -257,7 +256,6 @@
 
         function getCurrentTimeSec() {
             const now = new Date();
-            // JST基準の時分秒を取得
             const jstFormatter = new Intl.DateTimeFormat('ja-JP', {
                 timeZone: 'Asia/Tokyo',
                 hour: 'numeric',
@@ -283,6 +281,14 @@
             const m = parseInt(parts[1], 10) || 0;
             const s = parseInt(parts[2], 10) || 0;
             return h * 3600 + m * 60 + s;
+        }
+
+        function secToTime(totalSec) {
+            if (totalSec < 0) totalSec = 0;
+            const h = Math.floor(totalSec / 3600) % 24;
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
         }
 
         function switchScreen(target) {
@@ -337,7 +343,7 @@
             switchScreen('zaisen');
         }
 
-        // --- ダイヤ設定フォーム（秒対応） ---
+        // --- ダイヤ設定フォーム（自動連動機能付き） ---
         function renderDiaForm() {
             const container = document.getElementById('train-inputs');
             container.innerHTML = '';
@@ -346,9 +352,10 @@
                 appData.stations.forEach((st, sIdx) => {
                     const found = train.schedule.find(sc => sc.stationIndex === sIdx) || { arr: "11:00:00", dep: "11:00:30" };
                     schedHtml += `
-                        <div style="margin-left: 20px; margin-bottom: 5px; font-size:0.9rem;">
-                            <b>${st.name}</b> - 着: <input type="text" value="${found.arr}" id="t-${tIdx}-s-${sIdx}-arr" placeholder="11:00:00" style="width:90px;"> 
-                            発: <input type="text" value="${found.dep}" id="t-${tIdx}-s-${sIdx}-dep" placeholder="11:00:30" style="width:90px;">
+                        <div style="margin-left: 20px; margin-bottom: 5px; font-size:0.9rem;" id="row-${tIdx}-s-${sIdx}">
+                            <b>${st.name}</b> - 
+                            着: <input type="text" value="${found.arr}" id="t-${tIdx}-s-${sIdx}-arr" style="width:90px;" oninput="onTimeChanged(${tIdx}, ${sIdx})"> 
+                            発: <input type="text" value="${found.dep}" id="t-${tIdx}-s-${sIdx}-dep" style="width:90px;" oninput="onTimeChanged(${tIdx}, ${sIdx})">
                         </div>
                     `;
                 });
@@ -366,6 +373,36 @@
                 `;
                 container.appendChild(card);
             });
+        }
+
+        // 時刻が変更されたときに次の駅の時刻を自動計算して連動させる関数
+        function onTimeChanged(tIdx, sIdx) {
+            const depInput = document.getElementById(`t-${tIdx}-s-${sIdx}-dep`);
+            if (!depInput) return;
+            const depSec = timeToSec(depInput.value);
+            if (depSec === -1) return;
+
+            // 次の駅が存在するか確認
+            const nextSIdx = sIdx + 1;
+            const nextArrInput = document.getElementById(`t-${tIdx}-s-${nextSIdx}-arr`);
+            const nextDepInput = document.getElementById(`t-${tIdx}-s-${nextSIdx}-dep`);
+
+            if (nextArrInput && nextDepInput) {
+                // 現在の駅の発車時刻から、次の駅の到着・発車時刻を自動予測（例: 1分間隔で走行、30秒停車）
+                const currentNextArrSec = timeToSec(nextArrInput.value);
+                const currentNextDepSec = timeToSec(nextDepInput.value);
+                const travelTime = (currentNextArrSec !== -1 && currentNextDepSec !== -1) ? (currentNextDepSec - currentNextArrSec) : 30;
+
+                // 新しい到着時刻 = この駅の発車時刻 + 60秒（1分走行など、仮の駅間時間）
+                const newArrSec = depSec + 60;
+                const newDepSec = newArrSec + travelTime;
+
+                nextArrInput.value = secToTime(newArrSec);
+                nextDepInput.value = secToTime(newDepSec);
+
+                // さらに次の駅も連動させるために再帰的に呼び出す
+                onTimeChanged(tIdx, nextSIdx);
+            }
         }
 
         function addTrainRow() {
