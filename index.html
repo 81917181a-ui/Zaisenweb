@@ -1,10 +1,30 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <link rel="stylesheet" href="style.css"> <!-- CSSを読み込み -->
+    <meta charset="UTF-8">
+    <title>電車シミュレーター</title>
+    <link rel="stylesheet" href="style.css"> <!-- CSSは別ファイルに分けます -->
 </head>
 <body>
-    <div id="route-container"></div>
+    <h1>電車運行管理システム</h1>
+
+    <!-- 路線作成・管理エリア -->
+    <div id="controls">
+        <input type="text" id="route-name" placeholder="路線名">
+        <input type="text" id="stations" placeholder="駅名（カンマ区切り）">
+        <button onclick="saveRoute()">保存</button>
+    </div>
+
+    <!-- 路線図を表示するエリア -->
+    <div id="route-display"></div>
+
+    <!-- 列車詳細のポップアップ（最初は隠しておく） -->
+    <div id="popup" class="hidden">
+        <h2 id="popup-title"></h2>
+        <div id="popup-content"></div>
+        <button onclick="closePopup()">閉じる</button>
+    </div>
+
     <script src="script.js"></script> <!-- JavaScriptを読み込み -->
 </body>
 </html>
