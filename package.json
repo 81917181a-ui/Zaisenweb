@@ -1,0 +1,10 @@
+{
+  "name": "zaisenweb",
+  "version": "1.0.0",
+  "description": "Train route and presence simulator",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {}
+}
