@@ -528,14 +528,25 @@
             const saved = localStorage.getItem('railwayAppData');
             if (saved) {
                 appData = JSON.parse(saved);
+            } else {
+                // 保存データがない（またはリセットされた）場合は完全に空っぽのデータにする
+                appData = {
+                    name: "（路線名未設定）",
+                    stations: [],
+                    trains: []
+                };
             }
         }
 
         function resetAllData() {
-            if (confirm('すべての路線・ダイヤデータを初期状態にリセットしますか？')) {
+            if (confirm('すべての情報を完全に消去してリセットしますか？')) {
                 localStorage.removeItem('railwayAppData');
-                appData = JSON.parse(JSON.stringify(defaultAppData));
-                alert('データをリセットしました。');
+                appData = {
+                    name: "（路線名未設定）",
+                    stations: [],
+                    trains: []
+                };
+                alert('すべての情報を消去しました。');
                 switchScreen('zaisen');
             }
         }
