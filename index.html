@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>運行管理システム (OuDia完全対応版)</title>
+    <title>運行管理システム (データ完全連動版)</title>
     <style>
         body {
             font-family: sans-serif;
@@ -202,7 +202,6 @@
         <div class="setting-card">
             <h3>ファイル・データ操作</h3>
             <button class="action-btn" onclick="exportJSON()">ファイル保存</button>
-            <!-- accept="*" に変更し全てのファイルを選択可能に -->
             <input type="file" id="import-file-setting" accept="*" onchange="importAnyFile(event)" style="margin-left: 10px;">
             <button class="reset-btn" style="float: right;" onclick="resetAllData()">すべてリセット</button>
         </div>
@@ -497,6 +496,16 @@
             }
         }
 
+        function refreshActiveScreenUI() {
+            if (document.getElementById('screen-setting').classList.contains('active')) {
+                renderSettingForm();
+            } else if (document.getElementById('screen-dia').classList.contains('active')) {
+                renderDiaForm();
+            } else {
+                renderZaisen();
+            }
+        }
+
         function resetAllData() {
             if (confirm('すべての情報を完全に消去してリセットしますか？')) {
                 localStorage.removeItem('railwayAppData');
@@ -506,7 +515,7 @@
                     trains: []
                 };
                 alert('すべての情報を消去しました。');
-                switchScreen('zaisen');
+                refreshActiveScreenUI();
             }
         }
 
@@ -518,41 +527,34 @@
             dl.click();
         }
 
-        // --- ファイル自動判定＆読み込み処理 ---
+        // --- ファイル自動判定＆読み込み処理 (現在開いている画面の入力フォームも即座に再描写) ---
         function importAnyFile(event) {
             const file = event.target.files[0];
             if (!file) return;
 
             const reader = new FileReader();
 
-            // Shift_JIS で読み込む (OuDiaがShift_JISのため)
             reader.readAsText(file, 'Shift_JIS');
             reader.onload = function(e) {
                 try {
                     const content = e.target.result;
 
-                    // 内容が JSON 形式かチェック
                     if (content.trim().startsWith('{')) {
                         appData = JSON.parse(content);
-                        saveStorage();
-                        alert('JSONファイルを正常に読み込みました！');
-                        switchScreen('zaisen');
-                        return;
+                    } else {
+                        appData = parseOudText(content);
                     }
-
-                    // OuDia 形式として解析
-                    appData = parseOudText(content);
                     saveStorage();
-                    alert('OuDia（.oud）ファイルを正常に読み込みました！');
-                    switchScreen('zaisen');
+                    alert('ファイルを正常に読み込みました！');
+                    refreshActiveScreenUI();
                 } catch (err) {
                     console.error("Parse Error:", err);
-                    alert('ファイルの解析に失敗しました。ファイルの中身を確認してください。');
+                    alert('ファイルの解析に失敗しました。');
                 }
             };
         }
 
-        // --- OuDia (.oud) 専用解析エンジン（強化版） ---
+        // --- OuDia (.oud) 専用解析エンジン ---
         function parseOudText(oudText) {
             const lines = oudText.split(/\r?\n/);
             let routeName = "OuDia路線";
@@ -564,12 +566,10 @@
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i].trim();
 
-                // 路線名
                 if (line.startsWith('Rosenmei=')) {
                     routeName = line.split('=')[1] || routeName;
                 }
 
-                // 駅リスト
                 if (line === 'Eki.') inEkiBlock = true;
                 if (line === '.' && inEkiBlock) inEkiBlock = false;
 
@@ -580,7 +580,6 @@
                     }
                 }
 
-                // 列車開始
                 if (line === 'Ressha.') {
                     currentTrain = { name: '普通', schedule: [] };
                 }
@@ -591,7 +590,6 @@
                         if (nameVal) currentTrain.name = nameVal;
                     }
 
-                    // 下り・上りどちらの時刻フォーマットにも対応
                     if (line.startsWith('EkiJikokukou=') || line.startsWith('EkiJikokunobori=')) {
                         const isNobori = line.startsWith('EkiJikokunobori=');
                         const timeData = line.split('=')[1];
@@ -618,7 +616,6 @@
 
                     if (line === '.') {
                         if (currentTrain.schedule.length > 0) {
-                            // 駅順に並び替え
                             currentTrain.schedule.sort((a, b) => a.stationIndex - b.stationIndex);
                             trains.push(currentTrain);
                         }
@@ -634,11 +631,10 @@
             };
         }
 
-        // OuDiaの時刻セル解析
         function parseOudTimeCell(cellStr) {
-            if (!cellStr || cellStr === '2') return null; // 経由なし
+            if (!cellStr || cellStr === '2') return null;
             if (cellStr === '1') {
-                return { arr: "", dep: "", type: "pass" }; // 通過
+                return { arr: "", dep: "", type: "pass" };
             }
 
             const parts = cellStr.split('/');
@@ -656,7 +652,6 @@
             return { arr: arrStr, dep: depStr, type: "stop" };
         }
 
-        // 時刻文字列 (例: "915", "120530") -> "HH:MM:SS"
         function formatOudTimeStr(timeStr) {
             if (!timeStr || timeStr === '1' || timeStr === '2') return "";
             let s = timeStr.trim().replace(/[^0-9]/g, '');
