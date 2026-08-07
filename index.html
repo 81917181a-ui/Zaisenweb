@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>運行管理システム (OuDia対応版)</title>
+    <title>運行管理システム (OuDia完全対応版)</title>
     <style>
         body {
             font-family: sans-serif;
@@ -90,7 +90,7 @@
         }
         button.reset-btn:hover { background: #c0392b; }
 
-        /* 在線画面（路線図） */
+        /* 路線図スタイル */
         .route-scroll-container {
             overflow-x: auto;
             background: white;
@@ -190,7 +190,7 @@
     <!-- 【1. 運行状況画面】 -->
     <div id="screen-zaisen" class="screen active">
         <h2 id="display-route-title">（路線名未設定）</h2>
-        <p style="color: #666; font-size: 0.9rem;">日本時間（JST）と秒単位で連動して列車がリアルタイムに運行します。</p>
+        <p style="color: #666; font-size: 0.9rem;">日本時間（JST）とリアルタイムに連動して列車が運行します。</p>
         
         <div class="route-scroll-container">
             <div class="horizontal-line-wrapper" id="route-line-view"></div>
@@ -202,7 +202,8 @@
         <div class="setting-card">
             <h3>ファイル・データ操作</h3>
             <button class="action-btn" onclick="exportJSON()">ファイル保存</button>
-            <input type="file" id="import-file-setting" accept=".json,.oud" onchange="importJSON(event)" style="margin-left: 10px;">
+            <!-- accept="*" に変更し全てのファイルを選択可能に -->
+            <input type="file" id="import-file-setting" accept="*" onchange="importAnyFile(event)" style="margin-left: 10px;">
             <button class="reset-btn" style="float: right;" onclick="resetAllData()">すべてリセット</button>
         </div>
 
@@ -220,7 +221,7 @@
         <div class="setting-card">
             <h3>ファイル・データ操作</h3>
             <button class="action-btn" onclick="exportJSON()">ファイル保存</button>
-            <input type="file" id="import-file-dia" accept=".json,.oud" onchange="importJSON(event)" style="margin-left: 10px;">
+            <input type="file" id="import-file-dia" accept="*" onchange="importAnyFile(event)" style="margin-left: 10px;">
             <button class="reset-btn" style="float: right;" onclick="resetAllData()">すべてリセット</button>
         </div>
 
@@ -312,7 +313,7 @@
         }
 
         function addStationRow() {
-            appData.stations.push({ name: "新駅", code: "S--" });
+            appData.stations.push({ name: "新駅", code: `S${appData.stations.length + 1}` });
             renderSettingForm();
         }
 
@@ -338,13 +339,13 @@
             appData.trains.forEach((train, tIdx) => {
                 let schedHtml = '';
                 appData.stations.forEach((st, sIdx) => {
-                    const found = train.schedule.find(sc => sc.stationIndex === sIdx) || { arr: "11:00:00", dep: "11:00:30", type: "stop" };
+                    const found = train.schedule.find(sc => sc.stationIndex === sIdx) || { arr: "", dep: "", type: "stop" };
                     const isPass = found.type === "pass";
                     schedHtml += `
                         <div class="row-group" style="margin-left: 10px; background: #fff; padding: 6px; border-radius: 4px; border: 1px solid #ddd;">
                             <span style="width: 100px; font-weight: bold;">${st.name}</span>
-                            着: <input type="text" value="${found.arr}" id="t-${tIdx}-s-${sIdx}-arr" style="width: 90px;">
-                            発: <input type="text" value="${found.dep}" id="t-${tIdx}-s-${sIdx}-dep" style="width: 90px;">
+                            着: <input type="text" value="${found.arr}" id="t-${tIdx}-s-${sIdx}-arr" style="width: 90px;" placeholder="HH:MM:SS">
+                            発: <input type="text" value="${found.dep}" id="t-${tIdx}-s-${sIdx}-dep" style="width: 90px;" placeholder="HH:MM:SS">
                             <label style="margin-left: 15px; cursor: pointer; font-weight: bold; color: #d32f2f; display: flex; align-items: center; gap: 4px;">
                                 <input type="checkbox" id="t-${tIdx}-s-${sIdx}-pass" ${isPass ? 'checked' : ''}> ✅ 通過
                             </label>
@@ -517,47 +518,41 @@
             dl.click();
         }
 
-        // --- ファイル読み込み処理（OuDia / JSON 自動判別機能を追加） ---
-        function importJSON(event) {
+        // --- ファイル自動判定＆読み込み処理 ---
+        function importAnyFile(event) {
             const file = event.target.files[0];
             if (!file) return;
 
             const reader = new FileReader();
 
-            // 拡張子が .oud (OuDia) の場合
-            if (file.name.toLowerCase().endsWith('.oud')) {
-                // OuDiaの文字コード(Shift_JIS)で読み込む
-                reader.readAsText(file, 'Shift_JIS');
-                reader.onload = function(e) {
-                    try {
-                        const text = e.target.result;
-                        appData = parseOudText(text); // 解析実行
-                        saveStorage();
-                        alert('OuDia（.oud）ファイルを正常に読み込みました！');
-                        switchScreen('zaisen');
-                    } catch (err) {
-                        console.error(err);
-                        alert('OuDiaファイルの解析に失敗しました。');
-                    }
-                };
-                return;
-            }
-
-            // 通常の JSON ファイルの場合
-            reader.readAsText(file, 'UTF-8');
+            // Shift_JIS で読み込む (OuDiaがShift_JISのため)
+            reader.readAsText(file, 'Shift_JIS');
             reader.onload = function(e) {
                 try {
-                    appData = JSON.parse(e.target.result);
+                    const content = e.target.result;
+
+                    // 内容が JSON 形式かチェック
+                    if (content.trim().startsWith('{')) {
+                        appData = JSON.parse(content);
+                        saveStorage();
+                        alert('JSONファイルを正常に読み込みました！');
+                        switchScreen('zaisen');
+                        return;
+                    }
+
+                    // OuDia 形式として解析
+                    appData = parseOudText(content);
                     saveStorage();
-                    alert('JSONファイルを読み込みました！');
+                    alert('OuDia（.oud）ファイルを正常に読み込みました！');
                     switchScreen('zaisen');
                 } catch (err) {
-                    alert('ファイルの読み込みに失敗しました。');
+                    console.error("Parse Error:", err);
+                    alert('ファイルの解析に失敗しました。ファイルの中身を確認してください。');
                 }
             };
         }
 
-        // --- OuDiaテキストデータ（.oud）の専用パーサー関数 ---
+        // --- OuDia (.oud) 専用解析エンジン（強化版） ---
         function parseOudText(oudText) {
             const lines = oudText.split(/\r?\n/);
             let routeName = "OuDia路線";
@@ -566,63 +561,65 @@
             let currentTrain = null;
             let inEkiBlock = false;
 
-            for (let line of lines) {
-                const trimmed = line.trim();
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
 
-                // 路線名を取得
-                if (trimmed.startsWith('Rosenmei=')) {
-                    routeName = trimmed.split('=')[1] || routeName;
+                // 路線名
+                if (line.startsWith('Rosenmei=')) {
+                    routeName = line.split('=')[1] || routeName;
                 }
 
-                // 駅リストの開始と終了
-                if (trimmed === 'Eki.') inEkiBlock = true;
-                if (trimmed === '.' && inEkiBlock) inEkiBlock = false;
+                // 駅リスト
+                if (line === 'Eki.') inEkiBlock = true;
+                if (line === '.' && inEkiBlock) inEkiBlock = false;
 
-                // 駅名を取得
-                if (inEkiBlock && (trimmed.startsWith('Ekimei=') || trimmed.startsWith('Ekimai='))) {
-                    const stName = trimmed.split('=')[1];
+                if (inEkiBlock && (line.startsWith('Ekimei=') || line.startsWith('Ekimai='))) {
+                    const stName = line.split('=')[1];
                     if (stName) {
                         stations.push({ name: stName, code: `S${stations.length + 1}` });
                     }
                 }
 
-                // 列車情報の始まり
-                if (trimmed === 'Ressha.') {
+                // 列車開始
+                if (line === 'Ressha.') {
                     currentTrain = { name: '普通', schedule: [] };
                 }
 
                 if (currentTrain) {
-                    // 列車名・種別名
-                    if (trimmed.startsWith('Resshamei=')) {
-                        const nameVal = trimmed.split('=')[1];
+                    if (line.startsWith('Resshamei=')) {
+                        const nameVal = line.split('=')[1];
                         if (nameVal) currentTrain.name = nameVal;
                     }
 
-                    // 各駅の時刻情報
-                    if (trimmed.startsWith('EkiJikokukou=')) {
-                        const timeData = trimmed.split('=')[1];
+                    // 下り・上りどちらの時刻フォーマットにも対応
+                    if (line.startsWith('EkiJikokukou=') || line.startsWith('EkiJikokunobori=')) {
+                        const isNobori = line.startsWith('EkiJikokunobori=');
+                        const timeData = line.split('=')[1];
                         if (timeData) {
                             const times = timeData.split(',');
                             times.forEach((t, sIdx) => {
-                                // 1や空欄は未入力・未経由を表す
-                                if (t && t !== '1' && sIdx < stations.length) {
-                                    const parts = t.split('/');
-                                    const arrStr = formatOudTime(parts[0]);
-                                    const depStr = formatOudTime(parts[1] || parts[0]);
-                                    currentTrain.schedule.push({
-                                        stationIndex: sIdx,
-                                        arr: arrStr,
-                                        dep: depStr,
-                                        type: parts[0] === '' ? 'pass' : 'stop'
-                                    });
+                                if (t) {
+                                    const actualStIdx = isNobori ? (stations.length - 1 - sIdx) : sIdx;
+                                    if (actualStIdx >= 0 && actualStIdx < stations.length) {
+                                        const parsed = parseOudTimeCell(t);
+                                        if (parsed) {
+                                            currentTrain.schedule.push({
+                                                stationIndex: actualStIdx,
+                                                arr: parsed.arr,
+                                                dep: parsed.dep,
+                                                type: parsed.type
+                                            });
+                                        }
+                                    }
                                 }
                             });
                         }
                     }
 
-                    // 列車情報の終わり
-                    if (trimmed === '.') {
+                    if (line === '.') {
                         if (currentTrain.schedule.length > 0) {
+                            // 駅順に並び替え
+                            currentTrain.schedule.sort((a, b) => a.stationIndex - b.stationIndex);
                             trains.push(currentTrain);
                         }
                         currentTrain = null;
@@ -637,17 +634,43 @@
             };
         }
 
-        // OuDiaの時刻フォーマット (例: 915 -> 09:15:00) を HH:MM:SS に統一する関数
-        function formatOudTime(timeStr) {
-            if (!timeStr || timeStr === '1') return "00:00:00";
-            let cleaned = timeStr.replace(/[^0-9]/g, '');
-            if (cleaned.length === 3) cleaned = '0' + cleaned;
-            if (cleaned.length === 4) {
-                const h = cleaned.substring(0, 2);
-                const m = cleaned.substring(2, 4);
-                return `${h}:${m}:00`;
+        // OuDiaの時刻セル解析
+        function parseOudTimeCell(cellStr) {
+            if (!cellStr || cellStr === '2') return null; // 経由なし
+            if (cellStr === '1') {
+                return { arr: "", dep: "", type: "pass" }; // 通過
             }
-            return "00:00:00";
+
+            const parts = cellStr.split('/');
+            let arrRaw = parts[0];
+            let depRaw = parts.length > 1 ? parts[1] : parts[0];
+
+            let arrStr = formatOudTimeStr(arrRaw);
+            let depStr = formatOudTimeStr(depRaw);
+
+            if (!arrStr && depStr) arrStr = depStr;
+            if (!depStr && arrStr) depStr = arrStr;
+
+            if (!arrStr && !depStr) return null;
+
+            return { arr: arrStr, dep: depStr, type: "stop" };
+        }
+
+        // 時刻文字列 (例: "915", "120530") -> "HH:MM:SS"
+        function formatOudTimeStr(timeStr) {
+            if (!timeStr || timeStr === '1' || timeStr === '2') return "";
+            let s = timeStr.trim().replace(/[^0-9]/g, '');
+            if (s.length === 3) s = '0' + s + '00';
+            else if (s.length === 4) s = s + '00';
+            else if (s.length === 5) s = '0' + s;
+            
+            if (s.length === 6) {
+                const hh = s.substring(0, 2);
+                const mm = s.substring(2, 4);
+                const ss = s.substring(4, 6);
+                return `${hh}:${mm}:${ss}`;
+            }
+            return "";
         }
 
         loadStorage();
