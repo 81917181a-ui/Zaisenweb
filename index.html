@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>運行管理システム</title>
+    <title>運行管理システム (OuDia対応版)</title>
     <style>
         body {
             font-family: sans-serif;
@@ -202,7 +202,7 @@
         <div class="setting-card">
             <h3>ファイル・データ操作</h3>
             <button class="action-btn" onclick="exportJSON()">ファイル保存</button>
-            <input type="file" id="import-file-setting" onchange="importJSON(event)" style="margin-left: 10px;">
+            <input type="file" id="import-file-setting" accept=".json,.oud" onchange="importJSON(event)" style="margin-left: 10px;">
             <button class="reset-btn" style="float: right;" onclick="resetAllData()">すべてリセット</button>
         </div>
 
@@ -220,7 +220,7 @@
         <div class="setting-card">
             <h3>ファイル・データ操作</h3>
             <button class="action-btn" onclick="exportJSON()">ファイル保存</button>
-            <input type="file" id="import-file-dia" onchange="importJSON(event)" style="margin-left: 10px;">
+            <input type="file" id="import-file-dia" accept=".json,.oud" onchange="importJSON(event)" style="margin-left: 10px;">
             <button class="reset-btn" style="float: right;" onclick="resetAllData()">すべてリセット</button>
         </div>
 
@@ -510,7 +510,6 @@
         }
 
         function exportJSON() {
-            // 文字化け防止のため、明示的にUTF-8のBOM付きまたはエンコードを付与してエクスポート
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData, null, 2));
             const dl = document.createElement('a');
             dl.setAttribute("href", dataStr);
@@ -518,24 +517,137 @@
             dl.click();
         }
 
+        // --- ファイル読み込み処理（OuDia / JSON 自動判別機能を追加） ---
         function importJSON(event) {
             const file = event.target.files[0];
             if (!file) return;
+
             const reader = new FileReader();
-            
-            // ★ 文字化け防止対策：UTF-8を指定して読み込む
+
+            // 拡張子が .oud (OuDia) の場合
+            if (file.name.toLowerCase().endsWith('.oud')) {
+                // OuDiaの文字コード(Shift_JIS)で読み込む
+                reader.readAsText(file, 'Shift_JIS');
+                reader.onload = function(e) {
+                    try {
+                        const text = e.target.result;
+                        appData = parseOudText(text); // 解析実行
+                        saveStorage();
+                        alert('OuDia（.oud）ファイルを正常に読み込みました！');
+                        switchScreen('zaisen');
+                    } catch (err) {
+                        console.error(err);
+                        alert('OuDiaファイルの解析に失敗しました。');
+                    }
+                };
+                return;
+            }
+
+            // 通常の JSON ファイルの場合
             reader.readAsText(file, 'UTF-8');
-            
             reader.onload = function(e) {
                 try {
                     appData = JSON.parse(e.target.result);
                     saveStorage();
-                    alert('ファイルを読み込みました！');
+                    alert('JSONファイルを読み込みました！');
                     switchScreen('zaisen');
                 } catch (err) {
-                    alert('ファイルの読み込みに失敗しました（JSONの形式が正しくないか、文字コードに問題があります）。');
+                    alert('ファイルの読み込みに失敗しました。');
                 }
             };
+        }
+
+        // --- OuDiaテキストデータ（.oud）の専用パーサー関数 ---
+        function parseOudText(oudText) {
+            const lines = oudText.split(/\r?\n/);
+            let routeName = "OuDia路線";
+            let stations = [];
+            let trains = [];
+            let currentTrain = null;
+            let inEkiBlock = false;
+
+            for (let line of lines) {
+                const trimmed = line.trim();
+
+                // 路線名を取得
+                if (trimmed.startsWith('Rosenmei=')) {
+                    routeName = trimmed.split('=')[1] || routeName;
+                }
+
+                // 駅リストの開始と終了
+                if (trimmed === 'Eki.') inEkiBlock = true;
+                if (trimmed === '.' && inEkiBlock) inEkiBlock = false;
+
+                // 駅名を取得
+                if (inEkiBlock && (trimmed.startsWith('Ekimei=') || trimmed.startsWith('Ekimai='))) {
+                    const stName = trimmed.split('=')[1];
+                    if (stName) {
+                        stations.push({ name: stName, code: `S${stations.length + 1}` });
+                    }
+                }
+
+                // 列車情報の始まり
+                if (trimmed === 'Ressha.') {
+                    currentTrain = { name: '普通', schedule: [] };
+                }
+
+                if (currentTrain) {
+                    // 列車名・種別名
+                    if (trimmed.startsWith('Resshamei=')) {
+                        const nameVal = trimmed.split('=')[1];
+                        if (nameVal) currentTrain.name = nameVal;
+                    }
+
+                    // 各駅の時刻情報
+                    if (trimmed.startsWith('EkiJikokukou=')) {
+                        const timeData = trimmed.split('=')[1];
+                        if (timeData) {
+                            const times = timeData.split(',');
+                            times.forEach((t, sIdx) => {
+                                // 1や空欄は未入力・未経由を表す
+                                if (t && t !== '1' && sIdx < stations.length) {
+                                    const parts = t.split('/');
+                                    const arrStr = formatOudTime(parts[0]);
+                                    const depStr = formatOudTime(parts[1] || parts[0]);
+                                    currentTrain.schedule.push({
+                                        stationIndex: sIdx,
+                                        arr: arrStr,
+                                        dep: depStr,
+                                        type: parts[0] === '' ? 'pass' : 'stop'
+                                    });
+                                }
+                            });
+                        }
+                    }
+
+                    // 列車情報の終わり
+                    if (trimmed === '.') {
+                        if (currentTrain.schedule.length > 0) {
+                            trains.push(currentTrain);
+                        }
+                        currentTrain = null;
+                    }
+                }
+            }
+
+            return {
+                name: routeName,
+                stations: stations.length > 0 ? stations : [{ name: "駅1", code: "S1" }],
+                trains: trains
+            };
+        }
+
+        // OuDiaの時刻フォーマット (例: 915 -> 09:15:00) を HH:MM:SS に統一する関数
+        function formatOudTime(timeStr) {
+            if (!timeStr || timeStr === '1') return "00:00:00";
+            let cleaned = timeStr.replace(/[^0-9]/g, '');
+            if (cleaned.length === 3) cleaned = '0' + cleaned;
+            if (cleaned.length === 4) {
+                const h = cleaned.substring(0, 2);
+                const m = cleaned.substring(2, 4);
+                return `${h}:${m}:00`;
+            }
+            return "00:00:00";
         }
 
         loadStorage();
