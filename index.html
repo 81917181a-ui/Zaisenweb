@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>運行管理システム (折り返し運転対応版)</title>
+    <title>運行管理システム (汎用ファイル駅名自動マッピング対応版)</title>
     <style>
         body {
             font-family: sans-serif;
@@ -79,6 +79,16 @@
             font-weight: bold;
         }
         button.action-btn:hover { background: #1565c0; }
+        button.reverse-btn {
+            background: #e65100;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button.reverse-btn:hover { background: #ef6c00; }
         button.reset-btn {
             background: #e74c3c;
             color: white;
@@ -179,7 +189,7 @@
             white-space: nowrap;
         }
         .train-at-station.turnback {
-            background: #e65100; /* 折り返し待ち中はオレンジ色表示 */
+            background: #e65100;
         }
     </style>
 </head>
@@ -372,12 +382,24 @@
             container.innerHTML = '';
             appData.trains.forEach((train, tIdx) => {
                 let schedHtml = '';
-                appData.stations.forEach((st, sIdx) => {
+                
+                let displayStations = [];
+                if (train.schedule && train.schedule.length > 0) {
+                    displayStations = train.schedule.map(sc => {
+                        const stObj = appData.stations[sc.stationIndex] || { name: `駅${sc.stationIndex+1}` };
+                        return { sIdx: sc.stationIndex, name: stObj.name };
+                    });
+                } else {
+                    displayStations = appData.stations.map((st, idx) => ({ sIdx: idx, name: st.name }));
+                }
+
+                displayStations.forEach((stInfo) => {
+                    const sIdx = stInfo.sIdx;
                     const found = (train.schedule || []).find(sc => sc.stationIndex === sIdx) || { arr: "", dep: "", type: "stop" };
                     const isPass = found.type === "pass";
                     schedHtml += `
                         <div class="row-group" style="margin-left: 10px; background: #fff; padding: 6px; border-radius: 4px; border: 1px solid #ddd;">
-                            <span style="width: 100px; font-weight: bold;">${st.name}</span>
+                            <span style="width: 100px; font-weight: bold;">${stInfo.name}</span>
                             着: <input type="text" value="${found.arr || ''}" id="t-${tIdx}-s-${sIdx}-arr" style="width: 90px;" placeholder="HH:MM:SS">
                             発: <input type="text" value="${found.dep || ''}" id="t-${tIdx}-s-${sIdx}-dep" style="width: 90px;" placeholder="HH:MM:SS">
                             <label style="margin-left: 15px; cursor: pointer; font-weight: bold; color: #d32f2f; display: flex; align-items: center; gap: 4px;">
@@ -393,6 +415,7 @@
                 card.innerHTML = `
                     <div class="row-group" style="border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-bottom: 10px;">
                         <input type="text" value="${train.name}" id="train-name-${tIdx}" style="font-weight:bold; flex:1;" placeholder="列車名 / 列車番号">
+                        <button onclick="reverseTrainSchedule(${tIdx})" class="reverse-btn">🔄 逆方向に変更</button>
                         <button onclick="removeTrain(${tIdx})" class="reset-btn" style="padding: 6px 10px;">列車削除</button>
                     </div>
                     <div style="font-size:0.85rem; color:#666; margin-bottom:8px;">各駅の時刻 (時:分:秒) と通過設定：</div>
@@ -407,22 +430,52 @@
                 const nameInput = document.getElementById(`train-name-${tIdx}`);
                 if (nameInput) train.name = nameInput.value;
 
-                train.schedule = [];
-                appData.stations.forEach((_, sIdx) => {
-                    const passCheck = document.getElementById(`t-${tIdx}-s-${sIdx}-pass`);
-                    const arrInput = document.getElementById(`t-${tIdx}-s-${sIdx}-arr`);
-                    const depInput = document.getElementById(`t-${tIdx}-s-${sIdx}-dep`);
+                let currentSched = train.schedule || [];
+                let newSched = [];
 
-                    if (arrInput && depInput) {
-                        const typeVal = (passCheck && passCheck.checked) ? "pass" : "stop";
-                        const arrVal = arrInput.value;
-                        const depVal = depInput.value;
-                        if (arrVal || depVal || typeVal === "pass") {
-                            train.schedule.push({ stationIndex: sIdx, arr: arrVal, dep: depVal, type: typeVal });
+                if (currentSched.length > 0) {
+                    currentSched.forEach(sc => {
+                        const sIdx = sc.stationIndex;
+                        const passCheck = document.getElementById(`t-${tIdx}-s-${sIdx}-pass`);
+                        const arrInput = document.getElementById(`t-${tIdx}-s-${sIdx}-arr`);
+                        const depInput = document.getElementById(`t-${tIdx}-s-${sIdx}-dep`);
+
+                        if (arrInput && depInput) {
+                            const typeVal = (passCheck && passCheck.checked) ? "pass" : "stop";
+                            const arrVal = arrInput.value;
+                            const depVal = depInput.value;
+                            if (arrVal || depVal || typeVal === "pass") {
+                                newSched.push({ stationIndex: sIdx, arr: arrVal, dep: depVal, type: typeVal });
+                            }
                         }
-                    }
-                });
+                    });
+                } else {
+                    appData.stations.forEach((_, sIdx) => {
+                        const passCheck = document.getElementById(`t-${tIdx}-s-${sIdx}-pass`);
+                        const arrInput = document.getElementById(`t-${tIdx}-s-${sIdx}-arr`);
+                        const depInput = document.getElementById(`t-${tIdx}-s-${sIdx}-dep`);
+
+                        if (arrInput && depInput) {
+                            const typeVal = (passCheck && passCheck.checked) ? "pass" : "stop";
+                            const arrVal = arrInput.value;
+                            const depVal = depInput.value;
+                            if (arrVal || depVal || typeVal === "pass") {
+                                newSched.push({ stationIndex: sIdx, arr: arrVal, dep: depVal, type: typeVal });
+                            }
+                        }
+                    });
+                }
+                train.schedule = newSched;
             });
+        }
+
+        function reverseTrainSchedule(tIdx) {
+            syncDiaInputsToMemory();
+            const train = appData.trains[tIdx];
+            if (train && train.schedule) {
+                train.schedule.reverse();
+            }
+            renderDiaForm();
         }
 
         function addTrainRow() {
@@ -456,7 +509,6 @@
             const currentSec = getCurrentTimeSec();
             let trainPositions = {};
 
-            // 列車番号ごとにグループ化して折り返し位置計算を行う
             const groupedTrains = {};
             appData.trains.forEach(t => {
                 const tName = (t.name || "名称未設定").trim();
@@ -464,7 +516,6 @@
                 groupedTrains[tName].push(t);
             });
 
-            // 各列車グループの在線位置を判定
             Object.keys(groupedTrains).forEach(tName => {
                 const subTrains = groupedTrains[tName];
                 const posInfo = calculateGroupedTrainPosition(subTrains, currentSec, tName);
@@ -512,7 +563,6 @@
             });
         }
 
-        // 同一列車番号の複数ダイヤから現在の位置・向き・折り返し状態を算出
         function calculateGroupedTrainPosition(subTrains, currentSec, trainName) {
             let activeLegs = [];
 
@@ -520,19 +570,16 @@
                 const sched = train.schedule;
                 if (!sched || sched.length === 0) return;
 
-                // 進行方向判定（駅インデックスの増減）
                 const firstIdx = sched[0].stationIndex;
                 const lastIdx = sched[sched.length - 1].stationIndex;
-                const direction = firstIdx <= lastIdx ? 'down' : 'up'; // down:右向き(下り), up:左向き(上り)
+                const direction = firstIdx <= lastIdx ? 'down' : 'up';
 
-                // 各区間・駅での位置チェック
                 for (let i = 0; i < sched.length; i++) {
                     const currentSt = sched[i];
                     const arrSec = timeToSec(currentSt.arr);
                     const depSec = timeToSec(currentSt.dep);
                     const isPass = currentSt.type === "pass";
 
-                    // 1. 駅停車中
                     if (!isPass && arrSec !== -1 && depSec !== -1 && currentSec >= arrSec && currentSec <= depSec) {
                         activeLegs.push({
                             key: `st_${currentSt.stationIndex}`,
@@ -545,7 +592,6 @@
                         });
                     }
 
-                    // 2. 駅間走行中
                     if (i < sched.length - 1) {
                         const nextSt = sched[i + 1];
                         const nextArrSec = timeToSec(nextSt.arr);
@@ -571,12 +617,10 @@
             });
 
             if (activeLegs.length > 0) {
-                // 最も現在時刻にマッチする最新の走行区間を取得
                 activeLegs.sort((a, b) => b.arrSec - a.arrSec);
                 return activeLegs[0];
             }
 
-            // --- 接続チェック: 往路が終わり復路までの間（折り返し待ち時間）かどうかを判定 ---
             for (let i = 0; i < subTrains.length; i++) {
                 for (let j = 0; j < subTrains.length; j++) {
                     if (i === j) continue;
@@ -586,21 +630,19 @@
                     if (!leg1.schedule || leg1.schedule.length === 0) continue;
                     if (!leg2.schedule || leg2.schedule.length === 0) continue;
 
-                    const term1 = leg1.schedule[leg1.schedule.length - 1]; // 往路の終点
-                    const start2 = leg2.schedule[0];                        // 復路の起点
+                    const term1 = leg1.schedule[leg1.schedule.length - 1];
+                    const start2 = leg2.schedule[0];
 
-                    // 同じ駅で接続しているか
                     if (term1.stationIndex === start2.stationIndex) {
                         const arr1 = timeToSec(term1.arr !== "" ? term1.arr : term1.dep);
                         const dep2 = timeToSec(start2.dep !== "" ? start2.dep : start2.arr);
 
-                        // 往路着時刻〜復路発時刻の間の場合、折り返し待ちとしてその駅に表示
                         if (arr1 !== -1 && dep2 !== -1 && currentSec >= arr1 && currentSec < dep2) {
                             const nextDirection = start2.stationIndex <= leg2.schedule[leg2.schedule.length - 1].stationIndex ? 'down' : 'up';
                             return {
                                 key: `st_${term1.stationIndex}`,
                                 name: trainName,
-                                direction: nextDirection, // 折り返し後の発車方向に矢印を向ける
+                                direction: nextDirection,
                                 isTurnback: true
                             };
                         }
@@ -662,6 +704,9 @@
             dl.click();
         }
 
+        /* ----------------------------------------------------
+           ファイル読み込み・自動形式判別 & 駅名自動連携機能
+        ---------------------------------------------------- */
         function importAnyFile(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -674,9 +719,13 @@
                     const content = e.target.result;
 
                     if (content.trim().startsWith('{')) {
-                        appData = JSON.parse(content);
-                    } else {
+                        let parsedObj = JSON.parse(content);
+                        appData = autoMapStationNamesInJSON(parsedObj);
+                    } else if (content.includes('FileType=OuDia') || content.includes('Rosenmei=')) {
                         appData = parseOudText(content);
+                    } else {
+                        // 汎用テキスト / CSV の場合（既存駅名とマッチさせて自動設定）
+                        appData = parseGenericRouteAndDia(content);
                     }
                     saveStorage();
                     alert('ファイルを正常に読み込みました！');
@@ -688,6 +737,108 @@
             };
         }
 
+        // JSON読み込み時、stationName などの文字による駅指定を自動で既存 index に紐づける処理
+        function autoMapStationNamesInJSON(parsedObj) {
+            if (!parsedObj.stations || parsedObj.stations.length === 0) {
+                if (appData.stations.length > 0) parsedObj.stations = appData.stations;
+            }
+
+            if (parsedObj.trains && parsedObj.stations) {
+                parsedObj.trains.forEach(t => {
+                    if (t.schedule) {
+                        t.schedule.forEach(sc => {
+                            if (sc.stationName && (sc.stationIndex === undefined || sc.stationIndex === null)) {
+                                const idx = parsedObj.stations.findIndex(st => st.name === sc.stationName);
+                                if (idx !== -1) sc.stationIndex = idx;
+                            }
+                        });
+                    }
+                });
+            }
+            return parsedObj;
+        }
+
+        // CSVやテキストから、登録されている駅名を検出して自動的に路線・ダイヤを割り当てるパーサー
+        function parseGenericRouteAndDia(text) {
+            const lines = text.split(/\r?\n/);
+            let stations = [...appData.stations]; // 既存の駅設定を引き継ぐ
+            let trains = [];
+            let currentTrain = { name: "読み込み列車", schedule: [] };
+
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed) return;
+
+                const tokens = trimmed.split(/,|\t|\s+/);
+                
+                // 行の中から既存の駅名と一致するキーワードを探索
+                let foundStIndex = -1;
+                let foundToken = "";
+
+                tokens.forEach(tok => {
+                    const idx = stations.findIndex(st => st.name === tok);
+                    if (idx !== -1) {
+                        foundStIndex = idx;
+                        foundToken = tok;
+                    }
+                });
+
+                // 新たな駅名と思われる文字が存在し、新規駅追加が必要な場合（既存に無ければ自動拡張）
+                if (foundStIndex === -1 && tokens.length >= 2 && !tokens[0].includes(':')) {
+                    const possibleStName = tokens[0];
+                    if (possibleStName && !possibleStName.match(/^[0-9]+$/)) {
+                        let idx = stations.findIndex(st => st.name === possibleStName);
+                        if (idx === -1) {
+                            stations.push({ name: possibleStName, code: `S${stations.length + 1}` });
+                            idx = stations.length - 1;
+                        }
+                        foundStIndex = idx;
+                    }
+                }
+
+                if (foundStIndex !== -1) {
+                    let arrTime = "";
+                    let depTime = "";
+                    let isPass = trimmed.includes("通過") || trimmed.includes("PASS");
+
+                    // 時刻(HH:MM または HH:MM:SS)の抽出
+                    const timeMatches = trimmed.match(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g);
+                    if (timeMatches) {
+                        arrTime = formatStandardTime(timeMatches[0]);
+                        depTime = timeMatches.length > 1 ? formatStandardTime(timeMatches[1]) : arrTime;
+                    }
+
+                    currentTrain.schedule.push({
+                        stationIndex: foundStIndex,
+                        arr: arrTime,
+                        dep: depTime,
+                        type: isPass ? "pass" : "stop"
+                    });
+                }
+            });
+
+            if (currentTrain.schedule.length > 0) {
+                trains.push(currentTrain);
+            }
+
+            return {
+                name: appData.name || "汎用読み込み路線",
+                stations: stations.length > 0 ? stations : [{ name: "駅1", code: "S1" }],
+                trains: trains.length > 0 ? trains : appData.trains
+            };
+        }
+
+        function formatStandardTime(tStr) {
+            const p = tStr.split(':');
+            const h = p[0].padStart(2, '0');
+            const m = p[1].padStart(2, '0');
+            const s = p[2] ? p[2].padStart(2, '0') : '00';
+            return `${h}:${m}:${s}`;
+        }
+
+        /* ----------------------------------------------------
+           OuDia ( .oud ) パーサー (下り・上り 完全対応版)
+        ---------------------------------------------------- */
         function parseOudText(oudText) {
             const lines = oudText.split(/\r?\n/);
             let routeName = "OuDia路線";
@@ -728,28 +879,44 @@
                         const timeData = line.split('=')[1];
                         if (timeData) {
                             const times = timeData.split(',');
-                            times.forEach((t, sIdx) => {
-                                if (t) {
-                                    const actualStIdx = isNobori ? (stations.length - 1 - sIdx) : sIdx;
-                                    if (actualStIdx >= 0 && actualStIdx < stations.length) {
+                            
+                            if (!isNobori) {
+                                times.forEach((t, sIdx) => {
+                                    if (t && sIdx < stations.length) {
                                         const parsed = parseOudTimeCell(t);
                                         if (parsed) {
                                             currentTrain.schedule.push({
-                                                stationIndex: actualStIdx,
+                                                stationIndex: sIdx,
                                                 arr: parsed.arr,
                                                 dep: parsed.dep,
                                                 type: parsed.type
                                             });
                                         }
                                     }
-                                }
-                            });
+                                });
+                            } else {
+                                times.forEach((t, sIdx) => {
+                                    if (t) {
+                                        const actualStIdx = stations.length - 1 - sIdx;
+                                        if (actualStIdx >= 0 && actualStIdx < stations.length) {
+                                            const parsed = parseOudTimeCell(t);
+                                            if (parsed) {
+                                                currentTrain.schedule.push({
+                                                    stationIndex: actualStIdx,
+                                                    arr: parsed.arr,
+                                                    dep: parsed.dep,
+                                                    type: parsed.type
+                                                });
+                                            }
+                                        }
+                                    }
+                                });
+                            }
                         }
                     }
 
                     if (line === '.') {
                         if (currentTrain.schedule.length > 0) {
-                            currentTrain.schedule.sort((a, b) => a.stationIndex - b.stationIndex);
                             trains.push(currentTrain);
                         }
                         currentTrain = null;
