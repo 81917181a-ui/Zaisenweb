@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>運行管理システム (データ完全連動版)</title>
+    <title>運行管理システム (駅増減時のデータ保持対応版)</title>
     <style>
         body {
             font-family: sans-serif;
@@ -294,6 +294,21 @@
             if (target === 'zaisen') renderZaisen();
         }
 
+        // 入力フォームの状態を内部メモリに一時反映する関数
+        function syncRouteInputsToMemory() {
+            const titleInput = document.getElementById('route-title');
+            if (titleInput) appData.name = titleInput.value || "（路線名未設定）";
+            
+            appData.stations = appData.stations.map((st, idx) => {
+                const nameEl = document.getElementById(`st-name-${idx}`);
+                const codeEl = document.getElementById(`st-code-${idx}`);
+                return {
+                    name: nameEl ? nameEl.value : st.name,
+                    code: codeEl ? codeEl.value : st.code
+                };
+            });
+        }
+
         function renderSettingForm() {
             document.getElementById('route-title').value = appData.name === "（路線名未設定）" ? "" : appData.name;
             const container = document.getElementById('station-inputs');
@@ -312,21 +327,34 @@
         }
 
         function addStationRow() {
+            syncRouteInputsToMemory();
             appData.stations.push({ name: "新駅", code: `S${appData.stations.length + 1}` });
             renderSettingForm();
         }
 
         function removeStation(idx) {
+            syncRouteInputsToMemory();
+            
+            // 削除される駅のスケジュールを除去し、削除された駅より後のインデックスを詰める
+            appData.trains.forEach(train => {
+                if (train.schedule) {
+                    train.schedule = train.schedule
+                        .filter(sc => sc.stationIndex !== idx)
+                        .map(sc => {
+                            if (sc.stationIndex > idx) {
+                                return { ...sc, stationIndex: sc.stationIndex - 1 };
+                            }
+                            return sc;
+                        });
+                }
+            });
+
             appData.stations.splice(idx, 1);
             renderSettingForm();
         }
 
         function saveRouteSettings() {
-            appData.name = document.getElementById('route-title').value || "（路線名未設定）";
-            appData.stations = appData.stations.map((_, idx) => ({
-                name: document.getElementById(`st-name-${idx}`).value,
-                code: document.getElementById(`st-code-${idx}`).value
-            }));
+            syncRouteInputsToMemory();
             saveStorage();
             alert('路線設定を保存しました！');
             switchScreen('zaisen');
@@ -338,13 +366,13 @@
             appData.trains.forEach((train, tIdx) => {
                 let schedHtml = '';
                 appData.stations.forEach((st, sIdx) => {
-                    const found = train.schedule.find(sc => sc.stationIndex === sIdx) || { arr: "", dep: "", type: "stop" };
+                    const found = (train.schedule || []).find(sc => sc.stationIndex === sIdx) || { arr: "", dep: "", type: "stop" };
                     const isPass = found.type === "pass";
                     schedHtml += `
                         <div class="row-group" style="margin-left: 10px; background: #fff; padding: 6px; border-radius: 4px; border: 1px solid #ddd;">
                             <span style="width: 100px; font-weight: bold;">${st.name}</span>
-                            着: <input type="text" value="${found.arr}" id="t-${tIdx}-s-${sIdx}-arr" style="width: 90px;" placeholder="HH:MM:SS">
-                            発: <input type="text" value="${found.dep}" id="t-${tIdx}-s-${sIdx}-dep" style="width: 90px;" placeholder="HH:MM:SS">
+                            着: <input type="text" value="${found.arr || ''}" id="t-${tIdx}-s-${sIdx}-arr" style="width: 90px;" placeholder="HH:MM:SS">
+                            発: <input type="text" value="${found.dep || ''}" id="t-${tIdx}-s-${sIdx}-dep" style="width: 90px;" placeholder="HH:MM:SS">
                             <label style="margin-left: 15px; cursor: pointer; font-weight: bold; color: #d32f2f; display: flex; align-items: center; gap: 4px;">
                                 <input type="checkbox" id="t-${tIdx}-s-${sIdx}-pass" ${isPass ? 'checked' : ''}> ✅ 通過
                             </label>
@@ -367,7 +395,31 @@
             });
         }
 
+        function syncDiaInputsToMemory() {
+            appData.trains.forEach((train, tIdx) => {
+                const nameInput = document.getElementById(`train-name-${tIdx}`);
+                if (nameInput) train.name = nameInput.value;
+
+                train.schedule = [];
+                appData.stations.forEach((_, sIdx) => {
+                    const passCheck = document.getElementById(`t-${tIdx}-s-${sIdx}-pass`);
+                    const arrInput = document.getElementById(`t-${tIdx}-s-${sIdx}-arr`);
+                    const depInput = document.getElementById(`t-${tIdx}-s-${sIdx}-dep`);
+
+                    if (arrInput && depInput) {
+                        const typeVal = (passCheck && passCheck.checked) ? "pass" : "stop";
+                        const arrVal = arrInput.value;
+                        const depVal = depInput.value;
+                        if (arrVal || depVal || typeVal === "pass") {
+                            train.schedule.push({ stationIndex: sIdx, arr: arrVal, dep: depVal, type: typeVal });
+                        }
+                    }
+                });
+            });
+        }
+
         function addTrainRow() {
+            syncDiaInputsToMemory();
             appData.trains.push({
                 name: "新規列車",
                 schedule: appData.stations.map((_, idx) => ({ stationIndex: idx, arr: "12:00:00", dep: "12:00:30", type: "stop" }))
@@ -376,24 +428,13 @@
         }
 
         function removeTrain(tIdx) {
+            syncDiaInputsToMemory();
             appData.trains.splice(tIdx, 1);
             renderDiaForm();
         }
 
         function saveDiaSettings() {
-            appData.trains.forEach((train, tIdx) => {
-                train.name = document.getElementById(`train-name-${tIdx}`).value;
-                train.schedule = [];
-                appData.stations.forEach((_, sIdx) => {
-                    const passCheck = document.getElementById(`t-${tIdx}-s-${sIdx}-pass`);
-                    const typeVal = (passCheck && passCheck.checked) ? "pass" : "stop";
-                    const arrVal = document.getElementById(`t-${tIdx}-s-${sIdx}-arr`).value;
-                    const depVal = document.getElementById(`t-${tIdx}-s-${sIdx}-dep`).value;
-                    if (arrVal || depVal) {
-                        train.schedule.push({ stationIndex: sIdx, arr: arrVal, dep: depVal, type: typeVal });
-                    }
-                });
-            });
+            syncDiaInputsToMemory();
             saveStorage();
             alert('ダイヤ設定を保存しました！');
             switchScreen('zaisen');
@@ -520,6 +561,9 @@
         }
 
         function exportJSON() {
+            if (document.getElementById('screen-setting').classList.contains('active')) syncRouteInputsToMemory();
+            if (document.getElementById('screen-dia').classList.contains('active')) syncDiaInputsToMemory();
+            
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData, null, 2));
             const dl = document.createElement('a');
             dl.setAttribute("href", dataStr);
@@ -527,7 +571,6 @@
             dl.click();
         }
 
-        // --- ファイル自動判定＆読み込み処理 (現在開いている画面の入力フォームも即座に再描写) ---
         function importAnyFile(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -554,7 +597,6 @@
             };
         }
 
-        // --- OuDia (.oud) 専用解析エンジン ---
         function parseOudText(oudText) {
             const lines = oudText.split(/\r?\n/);
             let routeName = "OuDia路線";
