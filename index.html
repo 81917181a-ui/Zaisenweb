@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>運行管理システム (汎用ファイル駅名自動マッピング対応版)</title>
+    <title>運行管理システム (OuDia & 筋屋 ブラウザ直接読み込み対応)</title>
     <style>
         body {
             font-family: sans-serif;
@@ -220,9 +220,9 @@
     <!-- 【2. 路線設定画面】 -->
     <div id="screen-setting" class="screen">
         <div class="setting-card">
-            <h3>ファイル・データ操作</h3>
-            <button class="action-btn" onclick="exportJSON()">ファイル保存</button>
-            <input type="file" id="import-file-setting" accept="*" onchange="importAnyFile(event)" style="margin-left: 10px;">
+            <h3>ファイル・データ操作 (OuDia / 筋屋 / JSON / CSV 対応)</h3>
+            <button class="action-btn" onclick="exportJSON()">JSON保存</button>
+            <input type="file" id="import-file-setting" accept=".oud,.oudia,.csv,.txt,.json,*" onchange="importAnyFile(event)" style="margin-left: 10px;">
             <button class="reset-btn" style="float: right;" onclick="resetAllData()">すべてリセット</button>
         </div>
 
@@ -238,9 +238,9 @@
     <!-- 【3. ダイヤ設定画面】 -->
     <div id="screen-dia" class="screen">
         <div class="setting-card">
-            <h3>ファイル・データ操作</h3>
-            <button class="action-btn" onclick="exportJSON()">ファイル保存</button>
-            <input type="file" id="import-file-dia" accept="*" onchange="importAnyFile(event)" style="margin-left: 10px;">
+            <h3>ファイル・データ操作 (OuDia / 筋屋 / JSON / CSV 対応)</h3>
+            <button class="action-btn" onclick="exportJSON()">JSON保存</button>
+            <input type="file" id="import-file-dia" accept=".oud,.oudia,.csv,.txt,.json,*" onchange="importAnyFile(event)" style="margin-left: 10px;">
             <button class="reset-btn" style="float: right;" onclick="resetAllData()">すべてリセット</button>
         </div>
 
@@ -705,39 +705,49 @@
         }
 
         /* ----------------------------------------------------
-           ファイル読み込み・自動形式判別 & 駅名自動連携機能
+           ファイル読み込み（Shift_JIS 対応 ＆ ブラウザ内直接解析）
         ---------------------------------------------------- */
         function importAnyFile(event) {
             const file = event.target.files[0];
             if (!file) return;
 
             const reader = new FileReader();
-
-            reader.readAsText(file, 'Shift_JIS');
+            
             reader.onload = function(e) {
                 try {
-                    const content = e.target.result;
-
-                    if (content.trim().startsWith('{')) {
-                        let parsedObj = JSON.parse(content);
-                        appData = autoMapStationNamesInJSON(parsedObj);
-                    } else if (content.includes('FileType=OuDia') || content.includes('Rosenmei=')) {
-                        appData = parseOudText(content);
-                    } else {
-                        // 汎用テキスト / CSV の場合（既存駅名とマッチさせて自動設定）
-                        appData = parseGenericRouteAndDia(content);
+                    const buffer = e.target.result;
+                    // Shift_JISでデコード試行、ダメならUTF-8
+                    let text = "";
+                    try {
+                        const decoder = new TextDecoder('shift-jis');
+                        text = decoder.decode(buffer);
+                    } catch(err) {
+                        const decoder = new TextDecoder('utf-8');
+                        text = decoder.decode(buffer);
                     }
+
+                    if (text.trim().startsWith('{')) {
+                        let parsedObj = JSON.parse(text);
+                        appData = autoMapStationNamesInJSON(parsedObj);
+                    } else if (text.includes('FileType=OuDia') || text.includes('Rosenmei=')) {
+                        appData = parseOudText(text);
+                    } else {
+                        // 筋屋・CSV・汎用テキストパーサー（ブラウザ内で駅名照合）
+                        appData = parseSujiyaOrGenericText(text);
+                    }
+
                     saveStorage();
-                    alert('ファイルを正常に読み込みました！');
+                    alert('データを直接ブラウザ内に読み込みました！');
                     refreshActiveScreenUI();
                 } catch (err) {
                     console.error("Parse Error:", err);
-                    alert('ファイルの解析に失敗しました。');
+                    alert('ファイルの解析に失敗しました。対応フォーマットをご確認ください。');
                 }
             };
+
+            reader.readAsArrayBuffer(file);
         }
 
-        // JSON読み込み時、stationName などの文字による駅指定を自動で既存 index に紐づける処理
         function autoMapStationNamesInJSON(parsedObj) {
             if (!parsedObj.stations || parsedObj.stations.length === 0) {
                 if (appData.stations.length > 0) parsedObj.stations = appData.stations;
@@ -758,10 +768,10 @@
             return parsedObj;
         }
 
-        // CSVやテキストから、登録されている駅名を検出して自動的に路線・ダイヤを割り当てるパーサー
-        function parseGenericRouteAndDia(text) {
+        // 筋屋・テキストデータ対応パーサー（WEB上で直接自動マッピング）
+        function parseSujiyaOrGenericText(text) {
             const lines = text.split(/\r?\n/);
-            let stations = [...appData.stations]; // 既存の駅設定を引き継ぐ
+            let stations = [...appData.stations]; 
             let trains = [];
             let currentTrain = { name: "読み込み列車", schedule: [] };
 
@@ -771,19 +781,14 @@
 
                 const tokens = trimmed.split(/,|\t|\s+/);
                 
-                // 行の中から既存の駅名と一致するキーワードを探索
                 let foundStIndex = -1;
-                let foundToken = "";
-
                 tokens.forEach(tok => {
                     const idx = stations.findIndex(st => st.name === tok);
                     if (idx !== -1) {
                         foundStIndex = idx;
-                        foundToken = tok;
                     }
                 });
 
-                // 新たな駅名と思われる文字が存在し、新規駅追加が必要な場合（既存に無ければ自動拡張）
                 if (foundStIndex === -1 && tokens.length >= 2 && !tokens[0].includes(':')) {
                     const possibleStName = tokens[0];
                     if (possibleStName && !possibleStName.match(/^[0-9]+$/)) {
@@ -801,7 +806,6 @@
                     let depTime = "";
                     let isPass = trimmed.includes("通過") || trimmed.includes("PASS");
 
-                    // 時刻(HH:MM または HH:MM:SS)の抽出
                     const timeMatches = trimmed.match(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g);
                     if (timeMatches) {
                         arrTime = formatStandardTime(timeMatches[0]);
@@ -822,7 +826,7 @@
             }
 
             return {
-                name: appData.name || "汎用読み込み路線",
+                name: appData.name || "筋屋・テキスト読み込み路線",
                 stations: stations.length > 0 ? stations : [{ name: "駅1", code: "S1" }],
                 trains: trains.length > 0 ? trains : appData.trains
             };
@@ -837,7 +841,7 @@
         }
 
         /* ----------------------------------------------------
-           OuDia ( .oud ) パーサー (下り・上り 完全対応版)
+           OuDia ( .oud / .oudia ) 直接解析パーサー
         ---------------------------------------------------- */
         function parseOudText(oudText) {
             const lines = oudText.split(/\r?\n/);
