@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>運行管理システム (駅増減時のデータ保持対応版)</title>
+    <title>運行管理システム (折り返し運転対応版)</title>
     <style>
         body {
             font-family: sans-serif;
@@ -161,6 +161,9 @@
             border-radius: 10px;
             font-size: 0.75rem;
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
         .train-at-station {
             position: absolute;
@@ -170,6 +173,13 @@
             padding: 3px 6px;
             border-radius: 8px;
             font-size: 0.7rem;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+        .train-at-station.turnback {
+            background: #e65100; /* 折り返し待ち中はオレンジ色表示 */
         }
     </style>
 </head>
@@ -294,7 +304,6 @@
             if (target === 'zaisen') renderZaisen();
         }
 
-        // 入力フォームの状態を内部メモリに一時反映する関数
         function syncRouteInputsToMemory() {
             const titleInput = document.getElementById('route-title');
             if (titleInput) appData.name = titleInput.value || "（路線名未設定）";
@@ -334,8 +343,6 @@
 
         function removeStation(idx) {
             syncRouteInputsToMemory();
-            
-            // 削除される駅のスケジュールを除去し、削除された駅より後のインデックスを詰める
             appData.trains.forEach(train => {
                 if (train.schedule) {
                     train.schedule = train.schedule
@@ -385,7 +392,7 @@
                 card.style.background = '#f9f9f9';
                 card.innerHTML = `
                     <div class="row-group" style="border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-bottom: 10px;">
-                        <input type="text" value="${train.name}" id="train-name-${tIdx}" style="font-weight:bold; flex:1;" placeholder="列車名">
+                        <input type="text" value="${train.name}" id="train-name-${tIdx}" style="font-weight:bold; flex:1;" placeholder="列車名 / 列車番号">
                         <button onclick="removeTrain(${tIdx})" class="reset-btn" style="padding: 6px 10px;">列車削除</button>
                     </div>
                     <div style="font-size:0.85rem; color:#666; margin-bottom:8px;">各駅の時刻 (時:分:秒) と通過設定：</div>
@@ -449,11 +456,21 @@
             const currentSec = getCurrentTimeSec();
             let trainPositions = {};
 
-            appData.trains.forEach(train => {
-                const pos = calculateTrainPosition(train, currentSec);
-                if (pos) {
-                    trainPositions[pos.key] = trainPositions[pos.key] || [];
-                    trainPositions[pos.key].push(train.name);
+            // 列車番号ごとにグループ化して折り返し位置計算を行う
+            const groupedTrains = {};
+            appData.trains.forEach(t => {
+                const tName = (t.name || "名称未設定").trim();
+                if (!groupedTrains[tName]) groupedTrains[tName] = [];
+                groupedTrains[tName].push(t);
+            });
+
+            // 各列車グループの在線位置を判定
+            Object.keys(groupedTrains).forEach(tName => {
+                const subTrains = groupedTrains[tName];
+                const posInfo = calculateGroupedTrainPosition(subTrains, currentSec, tName);
+                if (posInfo) {
+                    trainPositions[posInfo.key] = trainPositions[posInfo.key] || [];
+                    trainPositions[posInfo.key].push(posInfo);
                 }
             });
 
@@ -463,8 +480,11 @@
                 
                 let trainAtStHtml = '';
                 if (trainPositions[`st_${idx}`]) {
-                    trainPositions[`st_${idx}`].forEach(tName => {
-                        trainAtStHtml += `<div class="train-at-station">🚃 ${tName}</div>`;
+                    trainPositions[`st_${idx}`].forEach(info => {
+                        const icon = info.direction === 'up' ? '👈' : '👉';
+                        const extraClass = info.isTurnback ? ' turnback' : '';
+                        const statusLabel = info.isTurnback ? ' (折返待)' : '';
+                        trainAtStHtml += `<div class="train-at-station${extraClass}">${icon} ${info.name}${statusLabel}</div>`;
                     });
                 }
 
@@ -481,8 +501,9 @@
                     
                     let trainBetweenHtml = '';
                     if (trainPositions[`between_${idx}_${idx+1}`]) {
-                        trainPositions[`between_${idx}_${idx+1}`].forEach(tName => {
-                            trainBetweenHtml += `<div class="train-badge">🚄 ${tName}</div>`;
+                        trainPositions[`between_${idx}_${idx+1}`].forEach(info => {
+                            const icon = info.direction === 'up' ? '👈' : '👉';
+                            trainBetweenHtml += `<div class="train-badge">${icon} ${info.name}</div>`;
                         });
                     }
                     intervalNode.innerHTML = trainBetweenHtml;
@@ -491,32 +512,102 @@
             });
         }
 
-        function calculateTrainPosition(train, currentSec) {
-            const sched = train.schedule;
-            if (!sched || sched.length === 0) return null;
+        // 同一列車番号の複数ダイヤから現在の位置・向き・折り返し状態を算出
+        function calculateGroupedTrainPosition(subTrains, currentSec, trainName) {
+            let activeLegs = [];
 
-            for (let i = 0; i < sched.length; i++) {
-                const currentSt = sched[i];
-                const arrSec = timeToSec(currentSt.arr);
-                const depSec = timeToSec(currentSt.dep);
-                const isPass = currentSt.type === "pass";
+            subTrains.forEach(train => {
+                const sched = train.schedule;
+                if (!sched || sched.length === 0) return;
 
-                if (!isPass && arrSec !== -1 && depSec !== -1 && currentSec >= arrSec && currentSec <= depSec) {
-                    return { key: `st_${currentSt.stationIndex}` };
+                // 進行方向判定（駅インデックスの増減）
+                const firstIdx = sched[0].stationIndex;
+                const lastIdx = sched[sched.length - 1].stationIndex;
+                const direction = firstIdx <= lastIdx ? 'down' : 'up'; // down:右向き(下り), up:左向き(上り)
+
+                // 各区間・駅での位置チェック
+                for (let i = 0; i < sched.length; i++) {
+                    const currentSt = sched[i];
+                    const arrSec = timeToSec(currentSt.arr);
+                    const depSec = timeToSec(currentSt.dep);
+                    const isPass = currentSt.type === "pass";
+
+                    // 1. 駅停車中
+                    if (!isPass && arrSec !== -1 && depSec !== -1 && currentSec >= arrSec && currentSec <= depSec) {
+                        activeLegs.push({
+                            key: `st_${currentSt.stationIndex}`,
+                            name: trainName,
+                            direction: direction,
+                            arrSec: arrSec,
+                            depSec: depSec,
+                            isTerminal: (i === sched.length - 1 || i === 0),
+                            isTurnback: false
+                        });
+                    }
+
+                    // 2. 駅間走行中
+                    if (i < sched.length - 1) {
+                        const nextSt = sched[i + 1];
+                        const nextArrSec = timeToSec(nextSt.arr);
+                        const currentDepSec = depSec !== -1 ? depSec : arrSec;
+
+                        if (currentDepSec !== -1 && nextArrSec !== -1) {
+                            if (currentSec >= currentDepSec && currentSec < nextArrSec) {
+                                const minIdx = Math.min(currentSt.stationIndex, nextSt.stationIndex);
+                                const maxIdx = Math.max(currentSt.stationIndex, nextSt.stationIndex);
+                                activeLegs.push({
+                                    key: `between_${minIdx}_${maxIdx}`,
+                                    name: trainName,
+                                    direction: direction,
+                                    arrSec: currentDepSec,
+                                    depSec: nextArrSec,
+                                    isTerminal: false,
+                                    isTurnback: false
+                                });
+                            }
+                        }
+                    }
                 }
+            });
 
-                if (i < sched.length - 1) {
-                    const nextSt = sched[i + 1];
-                    const nextArrSec = timeToSec(nextSt.arr);
-                    const currentDepSec = depSec !== -1 ? depSec : arrSec;
+            if (activeLegs.length > 0) {
+                // 最も現在時刻にマッチする最新の走行区間を取得
+                activeLegs.sort((a, b) => b.arrSec - a.arrSec);
+                return activeLegs[0];
+            }
 
-                    if (currentDepSec !== -1 && nextArrSec !== -1) {
-                        if (currentSec >= currentDepSec && currentSec < nextArrSec) {
-                            return { key: `between_${currentSt.stationIndex}_${nextSt.stationIndex}` };
+            // --- 接続チェック: 往路が終わり復路までの間（折り返し待ち時間）かどうかを判定 ---
+            for (let i = 0; i < subTrains.length; i++) {
+                for (let j = 0; j < subTrains.length; j++) {
+                    if (i === j) continue;
+                    const leg1 = subTrains[i];
+                    const leg2 = subTrains[j];
+
+                    if (!leg1.schedule || leg1.schedule.length === 0) continue;
+                    if (!leg2.schedule || leg2.schedule.length === 0) continue;
+
+                    const term1 = leg1.schedule[leg1.schedule.length - 1]; // 往路の終点
+                    const start2 = leg2.schedule[0];                        // 復路の起点
+
+                    // 同じ駅で接続しているか
+                    if (term1.stationIndex === start2.stationIndex) {
+                        const arr1 = timeToSec(term1.arr !== "" ? term1.arr : term1.dep);
+                        const dep2 = timeToSec(start2.dep !== "" ? start2.dep : start2.arr);
+
+                        // 往路着時刻〜復路発時刻の間の場合、折り返し待ちとしてその駅に表示
+                        if (arr1 !== -1 && dep2 !== -1 && currentSec >= arr1 && currentSec < dep2) {
+                            const nextDirection = start2.stationIndex <= leg2.schedule[leg2.schedule.length - 1].stationIndex ? 'down' : 'up';
+                            return {
+                                key: `st_${term1.stationIndex}`,
+                                name: trainName,
+                                direction: nextDirection, // 折り返し後の発車方向に矢印を向ける
+                                isTurnback: true
+                            };
                         }
                     }
                 }
             }
+
             return null;
         }
 
