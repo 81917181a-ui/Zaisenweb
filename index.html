@@ -460,7 +460,6 @@
                 const depSec = timeToSec(currentSt.dep);
                 const isPass = currentSt.type === "pass";
 
-                // 通過駅の場合は停車判定をスキップ
                 if (!isPass && arrSec !== -1 && depSec !== -1 && currentSec >= arrSec && currentSec <= depSec) {
                     return { key: `st_${currentSt.stationIndex}` };
                 }
@@ -511,6 +510,7 @@
         }
 
         function exportJSON() {
+            // 文字化け防止のため、明示的にUTF-8のBOM付きまたはエンコードを付与してエクスポート
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData, null, 2));
             const dl = document.createElement('a');
             dl.setAttribute("href", dataStr);
@@ -522,6 +522,10 @@
             const file = event.target.files[0];
             if (!file) return;
             const reader = new FileReader();
+            
+            // ★ 文字化け防止対策：UTF-8を指定して読み込む
+            reader.readAsText(file, 'UTF-8');
+            
             reader.onload = function(e) {
                 try {
                     appData = JSON.parse(e.target.result);
@@ -529,10 +533,9 @@
                     alert('ファイルを読み込みました！');
                     switchScreen('zaisen');
                 } catch (err) {
-                    alert('読み込みに失敗しました。');
+                    alert('ファイルの読み込みに失敗しました（JSONの形式が正しくないか、文字コードに問題があります）。');
                 }
             };
-            reader.readAsText(file);
         }
 
         loadStorage();
