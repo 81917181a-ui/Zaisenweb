@@ -120,19 +120,25 @@
             flex-direction: column;
             align-items: flex-end;
         }
+
+        /* 【変更点】駅ナンバリング用の円サイズと文字サイズを最適化 */
         .st-code {
             border: 2px solid #0288d1;
             color: #0288d1;
             border-radius: 50%;
-            width: 22px;
-            height: 22px;
+            width: 30px;            /* 22px -> 30px に調整 */
+            height: 30px;           /* 22px -> 30px に調整 */
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.65rem;
+            font-size: 0.6rem;      /* 4文字でも収まる文字サイズ */
             font-weight: bold;
             margin-bottom: 2px;
+            box-sizing: border-box;
+            letter-spacing: -0.5px;  /* 文字間隔を詰めてはみ出しを防止 */
+            line-height: 1;
         }
+
         .st-name {
             font-weight: bold;
             font-size: 1rem;
@@ -389,7 +395,6 @@
     </div>
 
     <script>
-        // 初期状態を完全な空に設定
         let appData = {
             name: "",
             types: [],
@@ -787,7 +792,7 @@
                 row.innerHTML = `
                     <span style="font-weight:bold;">駅${idx + 1}:</span>
                     <input type="text" value="${st.name}" id="st-name-${idx}" placeholder="駅名" style="width: 100px;">
-                    <input type="text" value="${st.code || ''}" id="st-code-${idx}" placeholder="駅番号" style="width: 60px;">
+                    <input type="text" value="${st.code || ''}" id="st-code-${idx}" placeholder="駅番号 (例: KK01)" style="width: 80px;">
                     <input type="text" value="${st.stopTypes || ''}" id="st-stoptypes-${idx}" placeholder="停車種別 (例: 普通, 急行)" style="flex:1; min-width: 180px;">
                     <button onclick="removeStation(${idx})" style="background:#e74c3c; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">削除</button>
                 `;
