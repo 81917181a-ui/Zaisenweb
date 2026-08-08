@@ -384,13 +384,21 @@
     <div id="screen-general" class="screen">
         <div class="setting-card">
             <h3>一般設定</h3>
-            <p style="font-size: 0.85rem; color: #666;">路線図上の走行位置（左右表示）の割り当てを設定します。</p>
+            <p style="font-size: 0.85rem; color: #666;">走行位置の左右配置および時刻入力の単位を設定します。</p>
             
             <div style="margin-top: 15px;">
                 <label style="font-weight: bold; display: block; margin-bottom: 8px;">走行トラック位置設定:</label>
                 <select id="general-track-dir" style="width: 100%; padding: 8px;">
                     <option value="up-left">上り（上方向行き）：左走行 / 下り（下方向行き）：右走行</option>
                     <option value="down-left">下り（下方向行き）：左走行 / 上り（上方向行き）：右走行</option>
+                </select>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <label style="font-weight: bold; display: block; margin-bottom: 8px;">時刻入力単位設定:</label>
+                <select id="general-time-unit" style="width: 100%; padding: 8px;">
+                    <option value="sec">秒単位 (例: 12:00:00)</option>
+                    <option value="min">分単位 (例: 12:00)</option>
                 </select>
             </div>
 
@@ -419,7 +427,8 @@
             stations: [],
             trains: [],
             general: {
-                trackDir: "up-left"
+                trackDir: "up-left",
+                timeUnit: "sec"
             }
         };
 
@@ -452,9 +461,30 @@
 
         function timeToSec(timeStr) {
             if (!timeStr) return -1;
-            const parts = timeStr.split(':');
+            const parts = timeStr.trim().split(':');
             if (parts.length < 2) return -1;
-            return (parseInt(parts[0], 10) || 0) * 3600 + (parseInt(parts[1], 10) || 0) * 60 + (parseInt(parts[2], 10) || 0);
+            const h = parseInt(parts[0], 10) || 0;
+            const m = parseInt(parts[1], 10) || 0;
+            const s = parts.length >= 3 ? (parseInt(parts[2], 10) || 0) : 0;
+            return h * 3600 + m * 60 + s;
+        }
+
+        // 時刻文字列を正しくフォーマットする処理（「9:55」→「09:55:00」など）
+        function normalizeTimeString(timeStr) {
+            if (!timeStr) return "";
+            const parts = timeStr.trim().split(':');
+            if (parts.length < 2) return timeStr;
+
+            const timeUnit = (appData.general && appData.general.timeUnit) ? appData.general.timeUnit : "sec";
+            let h = parts[0].padStart(2, '0');
+            let m = parts[1].padStart(2, '0');
+
+            if (timeUnit === 'sec') {
+                let s = parts.length >= 3 ? parts[2].padStart(2, '0') : '00';
+                return `${h}:${m}:${s}`;
+            } else {
+                return `${h}:${m}`;
+            }
         }
 
         function switchScreen(target) {
@@ -475,14 +505,17 @@
         /* --- 【一般設定】 --- */
         function renderGeneralForm() {
             const trackSelect = document.getElementById('general-track-dir');
-            if (appData.general && appData.general.trackDir) {
-                trackSelect.value = appData.general.trackDir;
+            const unitSelect = document.getElementById('general-time-unit');
+            if (appData.general) {
+                if (appData.general.trackDir) trackSelect.value = appData.general.trackDir;
+                if (appData.general.timeUnit) unitSelect.value = appData.general.timeUnit;
             }
         }
 
         function saveGeneralSettings() {
             if (!appData.general) appData.general = {};
             appData.general.trackDir = document.getElementById('general-track-dir').value;
+            appData.general.timeUnit = document.getElementById('general-time-unit').value;
             saveStorage();
             alert('一般設定を保存しました');
             switchScreen('zaisen');
@@ -664,16 +697,22 @@
                 const sched = t.schedule;
                 if (!sched || sched.length < 2) return;
 
-                const firstIdx = sched[0].stationIndex;
-                const lastIdx = sched[sched.length - 1].stationIndex;
+                const validSched = sched.filter(s => s.arr || s.dep);
+                if (validSched.length < 2) return;
+
+                const firstIdx = validSched[0].stationIndex;
+                const lastIdx = validSched[validSched.length - 1].stationIndex;
                 const direction = firstIdx <= lastIdx ? 'down' : 'up';
 
-                for (let i = 0; i < sched.length; i++) {
-                    const st = sched[i];
+                for (let i = 0; i < validSched.length; i++) {
+                    const st = validSched[i];
                     const arr = timeToSec(st.arr);
                     const dep = timeToSec(st.dep);
 
-                    if (st.type !== 'pass' && arr !== -1 && dep !== -1 && currentSec >= arr && currentSec <= dep) {
+                    const startAtSt = (arr !== -1) ? arr : dep;
+                    const endAtSt = (dep !== -1) ? dep : arr;
+
+                    if (startAtSt !== -1 && endAtSt !== -1 && currentSec >= startAtSt && currentSec <= endAtSt) {
                         results.push({
                             type: 'st',
                             index: st.stationIndex,
@@ -683,18 +722,18 @@
                         });
                     }
 
-                    if (i < sched.length - 1) {
-                        const nextSt = sched[i + 1];
+                    if (i < validSched.length - 1) {
+                        const nextSt = validSched[i + 1];
                         const nextArr = timeToSec(nextSt.arr);
-                        const curDep = dep !== -1 ? dep : arr;
+                        const curDep = endAtSt;
 
                         if (curDep !== -1 && nextArr !== -1 && currentSec >= curDep && currentSec < nextArr) {
                             const totalSec = nextArr - curDep;
                             const elapsed = currentSec - curDep;
-                            let progress = totalSec > 0 ? (elapsed / totalSec) : 0.5;
+                            let ratio = totalSec > 0 ? (elapsed / totalSec) : 0.5;
 
                             let minIdx = Math.min(st.stationIndex, nextSt.stationIndex);
-                            if (direction === 'up') progress = 1 - progress;
+                            let progress = (direction === 'down') ? ratio : (1 - ratio);
 
                             results.push({
                                 type: 'between',
@@ -722,11 +761,13 @@
                 return;
             }
 
+            const timeUnit = (appData.general && appData.general.timeUnit) ? appData.general.timeUnit : "sec";
+            const placeholderText = timeUnit === 'min' ? '12:00' : '12:00:00';
+
             appData.trains.forEach((train, tIdx) => {
                 const isReversed = !!train.isReversed;
                 let stationOrder = appData.stations.map((st, idx) => ({ station: st, originalIndex: idx }));
                 
-                // 列車個別の反転フラグがtrueの場合、表示順のみ反転する
                 if (isReversed) {
                     stationOrder.reverse();
                 }
@@ -739,8 +780,8 @@
                     schedHtml += `
                         <div class="row-group" style="font-size:0.85rem;">
                             <span style="width: 70px;">${st.name}</span>
-                            着:<input type="text" value="${found.arr || ''}" id="t-${tIdx}-s-${sIdx}-arr" style="width:70px;" placeholder="12:00:00">
-                            発:<input type="text" value="${found.dep || ''}" id="t-${tIdx}-s-${sIdx}-dep" style="width:70px;" placeholder="12:00:30">
+                            着:<input type="text" value="${found.arr || ''}" id="t-${tIdx}-s-${sIdx}-arr" style="width:80px;" placeholder="${placeholderText}">
+                            発:<input type="text" value="${found.dep || ''}" id="t-${tIdx}-s-${sIdx}-dep" style="width:80px;" placeholder="${placeholderText}">
                         </div>
                     `;
                 });
@@ -766,7 +807,6 @@
             });
         }
 
-        // 列車単位での入力フォーム反転切り替え処理
         function toggleTrainDirection(tIdx) {
             syncDiaInputsToMemory();
             appData.trains[tIdx].isReversed = !appData.trains[tIdx].isReversed;
@@ -786,8 +826,11 @@
                     const arrInput = document.getElementById(`t-${tIdx}-s-${sIdx}-arr`);
                     const depInput = document.getElementById(`t-${tIdx}-s-${sIdx}-dep`);
                     if (arrInput && depInput) {
-                        if (arrInput.value || depInput.value) {
-                            newSched.push({ stationIndex: sIdx, arr: arrInput.value, dep: depInput.value, type: "stop" });
+                        let arrVal = normalizeTimeString(arrInput.value);
+                        let depVal = normalizeTimeString(depInput.value);
+
+                        if (arrVal || depVal) {
+                            newSched.push({ stationIndex: sIdx, arr: arrVal, dep: depVal, type: "stop" });
                         }
                     }
                 });
@@ -817,6 +860,7 @@
             syncDiaInputsToMemory();
             saveStorage();
             alert('ダイヤ設定を保存しました');
+            renderDiaForm(); // 自動補正された時刻文字列を再描画
             switchScreen('zaisen');
         }
 
@@ -908,7 +952,7 @@
             } else if (type === 'all') {
                 if (confirm('本当にすべての情報を全消去しますか？')) {
                     localStorage.removeItem('railwayAppData_v3');
-                    appData = { name: "", types: [], stations: [], trains: [], general: { trackDir: "up-left" } };
+                    appData = { name: "", types: [], stations: [], trains: [], general: { trackDir: "up-left", timeUnit: "sec" } };
                     alert('全データをクリアしました');
                 }
             }
@@ -923,7 +967,7 @@
             const saved = localStorage.getItem('railwayAppData_v3');
             if (saved) {
                 appData = JSON.parse(saved);
-                if (!appData.general) appData.general = { trackDir: "up-left" };
+                if (!appData.general) appData.general = { trackDir: "up-left", timeUnit: "sec" };
             }
         }
 
