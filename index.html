@@ -104,10 +104,11 @@
         .v-station-row {
             position: relative;
             width: 100%;
-            height: 70px;
+            min-height: 80px;
             display: flex;
             align-items: center;
             z-index: 2;
+            margin-bottom: 5px;
         }
 
         /* 駅情報（左側） */
@@ -134,7 +135,31 @@
         }
         .st-name {
             font-weight: bold;
-            font-size: 0.95rem;
+            font-size: 1rem;
+            line-height: 1.2;
+            margin-bottom: 4px;
+        }
+
+        /* 停車種別バッジ表示エリア */
+        .stop-types-wrapper {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 3px;
+            justify-content: flex-end;
+            max-width: 110px;
+            margin-bottom: 4px;
+        }
+        .stop-type-icon {
+            width: 18px;
+            height: 18px;
+            border-radius: 3px;
+            color: white;
+            font-size: 0.65rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
         }
 
         /* 中央の駅ドット */
@@ -197,6 +222,7 @@
             gap: 8px;
             margin-bottom: 8px;
             align-items: center;
+            flex-wrap: wrap;
         }
         input, select {
             padding: 6px;
@@ -332,6 +358,7 @@
         <div class="setting-card">
             <h3>路線・駅設定</h3>
             <input type="text" id="route-title" placeholder="路線名" style="width: 90%; margin-bottom: 12px;">
+            <p style="font-size: 0.8rem; color: #666; margin-top:-5px;">※停車種別はカンマ「,」区切りで複数指定できます（例: 普通, 急行, 特急）</p>
             <div id="station-inputs"></div>
             <button class="action-btn" onclick="addStationRow()">＋ 駅追加</button>
             <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveRouteSettings()">保存</button>
@@ -369,14 +396,15 @@
                 { name: "普通", color: "#78909c" },
                 { name: "急行", color: "#1e88e5" },
                 { name: "特急", color: "#e53935" },
-                { name: "快特", color: "#00c853" }
+                { name: "快特", color: "#00c853" },
+                { name: "エアポート快特", color: "#f39c12" }
             ],
             stations: [
-                { name: "平和島", code: "08" },
-                { name: "大森町", code: "09" },
-                { name: "梅屋敷", code: "10" },
-                { name: "京急蒲田", code: "11" },
-                { name: "雑色", code: "18" }
+                { name: "品川", code: "01", stopTypes: "普通, 急行, 特急, 快特, エアポート快特" },
+                { name: "北品川", code: "02", stopTypes: "普通" },
+                { name: "新馬場", code: "03", stopTypes: "普通" },
+                { name: "青物横丁", code: "04", stopTypes: "普通, 急行" },
+                { name: "平和島", code: "08", stopTypes: "普通, 急行" }
             ],
             trains: []
         };
@@ -516,6 +544,22 @@
                 const stRow = document.createElement('div');
                 stRow.className = 'v-station-row';
 
+                // 停車種別アイコンのHTML生成
+                let stopTypeHtml = '';
+                if (st.stopTypes) {
+                    const typeList = st.stopTypes.split(/[,、]/).map(s => s.trim()).filter(s => s);
+                    let iconsHtml = '';
+                    typeList.forEach(tName => {
+                        const color = getTrainColor(tName);
+                        // 種別名の頭1文字を取得（例：「普通」→「普」）
+                        const initialChar = tName.charAt(0) || '';
+                        iconsHtml += `<div class="stop-type-icon" style="background-color: ${color};" title="${tName}">${initialChar}</div>`;
+                    });
+                    if (iconsHtml) {
+                        stopTypeHtml = `<div class="stop-types-wrapper">${iconsHtml}</div>`;
+                    }
+                }
+
                 const trainsAtStation = trainPositions.filter(p => p.type === 'st' && p.index === idx);
                 let leftTrainHtml = '';
                 let rightTrainHtml = '';
@@ -532,6 +576,7 @@
                     <div class="station-info-left">
                         <div class="st-code">${st.code || idx+1}</div>
                         <div class="st-name">${st.name}</div>
+                        ${stopTypeHtml}
                         ${leftTrainHtml}
                     </div>
                     <div class="station-node"></div>
@@ -726,9 +771,11 @@
             appData.stations = appData.stations.map((st, idx) => {
                 const nameEl = document.getElementById(`st-name-${idx}`);
                 const codeEl = document.getElementById(`st-code-${idx}`);
+                const stopTypesEl = document.getElementById(`st-stoptypes-${idx}`);
                 return {
                     name: nameEl ? nameEl.value : st.name,
-                    code: codeEl ? codeEl.value : st.code
+                    code: codeEl ? codeEl.value : st.code,
+                    stopTypes: stopTypesEl ? stopTypesEl.value : (st.stopTypes || "")
                 };
             });
         }
@@ -740,10 +787,14 @@
             appData.stations.forEach((st, idx) => {
                 const row = document.createElement('div');
                 row.className = 'row-group';
+                row.style.background = "#f8f9fa";
+                row.style.padding = "8px";
+                row.style.borderRadius = "6px";
                 row.innerHTML = `
-                    <span>駅${idx + 1}:</span>
-                    <input type="text" value="${st.name}" id="st-name-${idx}" placeholder="駅名" style="flex:2;">
-                    <input type="text" value="${st.code || ''}" id="st-code-${idx}" placeholder="駅番号" style="flex:1;">
+                    <span style="font-weight:bold;">駅${idx + 1}:</span>
+                    <input type="text" value="${st.name}" id="st-name-${idx}" placeholder="駅名" style="width: 100px;">
+                    <input type="text" value="${st.code || ''}" id="st-code-${idx}" placeholder="駅番号" style="width: 60px;">
+                    <input type="text" value="${st.stopTypes || ''}" id="st-stoptypes-${idx}" placeholder="停車種別 (例: 普通, 急行, 特急)" style="flex:1; min-width: 180px;">
                     <button onclick="removeStation(${idx})" style="background:#e74c3c; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">削除</button>
                 `;
                 container.appendChild(row);
@@ -752,7 +803,7 @@
 
         function addStationRow() {
             syncRouteInputsToMemory();
-            appData.stations.push({ name: "新駅", code: `${appData.stations.length + 1}` });
+            appData.stations.push({ name: "新駅", code: `${appData.stations.length + 1}`, stopTypes: "普通" });
             renderSettingForm();
         }
 
