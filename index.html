@@ -186,7 +186,7 @@
             z-index: 2;
         }
 
-        /* 列車アイコン（動的カラー対応） */
+        /* 列車アイコン */
         .train-icon {
             display: inline-flex;
             align-items: center;
@@ -202,7 +202,6 @@
             white-space: nowrap;
         }
 
-        /* 進行方向矢印 */
         .dir-arrow-down::after { content: " ▼"; font-size: 0.65rem; }
         .dir-arrow-up::after { content: " ▲"; font-size: 0.65rem; }
 
@@ -339,7 +338,7 @@
     <div id="screen-type" class="screen">
         <div class="setting-card">
             <h3>列車種別・カラー設定</h3>
-            <p style="font-size: 0.85rem; color: #666;">種別名と表示カラー（#から始まるHexカラー）を設定します。</p>
+            <p style="font-size: 0.85rem; color: #666;">種別名と表示カラーを設定します。</p>
             <div id="type-inputs"></div>
             <button class="action-btn" onclick="addTypeRow()">＋ 種別追加</button>
             <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveTypeSettings()">種別設定を保存</button>
@@ -351,13 +350,13 @@
         <div class="setting-card">
             <h3>データ操作</h3>
             <button class="action-btn" onclick="exportJSON()">JSON保存</button>
-            <input type="file" id="import-file-setting" accept=".oud,.oudia,.csv,.txt,.json,*" onchange="importAnyFile(event)" style="margin-left: 10px;">
+            <input type="file" id="import-file-setting" accept=".json,*" onchange="importAnyFile(event)" style="margin-left: 10px;">
             <button class="reset-btn" style="float: right;" onclick="openResetModal()">リセット</button>
         </div>
 
         <div class="setting-card">
             <h3>路線・駅設定</h3>
-            <input type="text" id="route-title" placeholder="路線名" style="width: 90%; margin-bottom: 12px;">
+            <input type="text" id="route-title" placeholder="路線名 (例:〇〇線)" style="width: 90%; margin-bottom: 12px;">
             <p style="font-size: 0.8rem; color: #666; margin-top:-5px;">※停車種別はカンマ「,」区切りで複数指定できます（例: 普通, 急行, 特急）</p>
             <div id="station-inputs"></div>
             <button class="action-btn" onclick="addStationRow()">＋ 駅追加</button>
@@ -375,7 +374,7 @@
         </div>
     </div>
 
-    <!-- 【リセットモーダルダイアログ】 -->
+    <!-- リセットモーダル -->
     <div id="reset-modal" class="modal-overlay">
         <div class="modal-content">
             <h3 style="margin-top:0;">リセット項目の選択</h3>
@@ -390,22 +389,11 @@
     </div>
 
     <script>
+        // 初期状態を完全な空に設定
         let appData = {
-            name: "本線",
-            types: [
-                { name: "普通", color: "#78909c" },
-                { name: "急行", color: "#1e88e5" },
-                { name: "特急", color: "#e53935" },
-                { name: "快特", color: "#00c853" },
-                { name: "エアポート快特", color: "#f39c12" }
-            ],
-            stations: [
-                { name: "品川", code: "01", stopTypes: "普通, 急行, 特急, 快特, エアポート快特" },
-                { name: "北品川", code: "02", stopTypes: "普通" },
-                { name: "新馬場", code: "03", stopTypes: "普通" },
-                { name: "青物横丁", code: "04", stopTypes: "普通, 急行" },
-                { name: "平和島", code: "08", stopTypes: "普通, 急行" }
-            ],
+            name: "",
+            types: [],
+            stations: [],
             trains: []
         };
 
@@ -457,10 +445,14 @@
             if (target === 'zaisen') renderZaisen();
         }
 
-        /* --- 【種別設定画面の処理】 --- */
+        /* --- 【種別設定】 --- */
         function renderTypeForm() {
             const container = document.getElementById('type-inputs');
             container.innerHTML = '';
+            if (appData.types.length === 0) {
+                container.innerHTML = '<p style="color:#888;">種別が登録されていません。「＋ 種別追加」ボタンで登録してください。</p>';
+                return;
+            }
             appData.types.forEach((tp, idx) => {
                 const row = document.createElement('div');
                 row.className = 'row-group';
@@ -508,7 +500,7 @@
 
         function addTypeRow() {
             syncTypeInputsToMemory();
-            appData.types.push({ name: "新種別", color: "#1e88e5" });
+            appData.types.push({ name: "", color: "#1e88e5" });
             renderTypeForm();
         }
 
@@ -525,10 +517,10 @@
             switchScreen('zaisen');
         }
 
-        /* --- 【走行位置画面の描画】 --- */
+        /* --- 【走行位置画面】 --- */
         function renderZaisen() {
             loadStorage();
-            document.getElementById('display-route-title').innerText = appData.name || "未設定";
+            document.getElementById('display-route-title').innerText = appData.name || "（路線名未設定）";
             const wrapper = document.getElementById('vertical-route-view');
             wrapper.innerHTML = '<div class="vertical-line"></div>';
 
@@ -536,7 +528,7 @@
             const trainPositions = getCalculatedTrainPositions(currentSec);
 
             if (!appData.stations || appData.stations.length === 0) {
-                wrapper.innerHTML = '<p style="text-align:center; color:#888; padding:20px;">駅が登録されていません</p>';
+                wrapper.innerHTML = '<p style="text-align:center; color:#888; padding:20px;">駅が登録されていません。<br>「路線設定」画面から駅を追加してください。</p>';
                 return;
             }
 
@@ -544,14 +536,12 @@
                 const stRow = document.createElement('div');
                 stRow.className = 'v-station-row';
 
-                // 停車種別アイコンのHTML生成
                 let stopTypeHtml = '';
                 if (st.stopTypes) {
                     const typeList = st.stopTypes.split(/[,、]/).map(s => s.trim()).filter(s => s);
                     let iconsHtml = '';
                     typeList.forEach(tName => {
                         const color = getTrainColor(tName);
-                        // 種別名の頭1文字を取得（例：「普通」→「普」）
                         const initialChar = tName.charAt(0) || '';
                         iconsHtml += `<div class="stop-type-icon" style="background-color: ${color};" title="${tName}">${initialChar}</div>`;
                     });
@@ -574,7 +564,7 @@
 
                 stRow.innerHTML = `
                     <div class="station-info-left">
-                        <div class="st-code">${st.code || idx+1}</div>
+                        ${st.code ? `<div class="st-code">${st.code}</div>` : ''}
                         <div class="st-name">${st.name}</div>
                         ${stopTypeHtml}
                         ${leftTrainHtml}
@@ -640,7 +630,7 @@
                             type: 'st',
                             index: st.stationIndex,
                             name: t.name || '',
-                            trainType: t.type || '普通',
+                            trainType: t.type || '',
                             direction: direction
                         });
                     }
@@ -662,7 +652,7 @@
                                 type: 'between',
                                 index: minIdx,
                                 name: t.name || '',
-                                trainType: t.type || '普通',
+                                trainType: t.type || '',
                                 direction: direction,
                                 progress: progress
                             });
@@ -674,13 +664,13 @@
             return results;
         }
 
-        /* --- 【ダイヤ設定画面の処理】 --- */
+        /* --- 【ダイヤ設定】 --- */
         function renderDiaForm() {
             const container = document.getElementById('train-inputs');
             container.innerHTML = '';
 
             if (appData.trains.length === 0) {
-                container.innerHTML = '<p style="color:#888;">登録されている列車はありません。</p>';
+                container.innerHTML = '<p style="color:#888;">登録されている列車はありません。「＋ 列車追加」で追加してください。</p>';
                 return;
             }
 
@@ -691,8 +681,8 @@
                     schedHtml += `
                         <div class="row-group" style="font-size:0.85rem;">
                             <span style="width: 70px;">${st.name}</span>
-                            着:<input type="text" value="${found.arr || ''}" id="t-${tIdx}-s-${sIdx}-arr" style="width:70px;">
-                            発:<input type="text" value="${found.dep || ''}" id="t-${tIdx}-s-${sIdx}-dep" style="width:70px;">
+                            着:<input type="text" value="${found.arr || ''}" id="t-${tIdx}-s-${sIdx}-arr" style="width:70px;" placeholder="12:00:00">
+                            発:<input type="text" value="${found.dep || ''}" id="t-${tIdx}-s-${sIdx}-dep" style="width:70px;" placeholder="12:00:30">
                         </div>
                     `;
                 });
@@ -706,9 +696,9 @@
                 card.innerHTML = `
                     <div class="row-group">
                         <select id="train-type-${tIdx}" style="font-weight:bold;">
-                            ${typeOptions}
+                            ${typeOptions || '<option value="">(種別未設定)</option>'}
                         </select>
-                        <input type="text" value="${train.name || ''}" id="train-name-${tIdx}" style="font-weight:bold; flex:1;" placeholder="列車名 / 列車番号 (例: 1011)" >
+                        <input type="text" value="${train.name || ''}" id="train-name-${tIdx}" style="font-weight:bold; flex:1;" placeholder="列車名 / 列車番号" >
                         <button onclick="removeTrain(${tIdx})" style="background:#e74c3c; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">削除</button>
                     </div>
                     ${schedHtml}
@@ -741,11 +731,11 @@
 
         function addTrainRow() {
             syncDiaInputsToMemory();
-            const defaultType = appData.types.length > 0 ? appData.types[0].name : "普通";
+            const defaultType = appData.types.length > 0 ? appData.types[0].name : "";
             appData.trains.push({
-                name: "101",
+                name: "",
                 type: defaultType,
-                schedule: appData.stations.map((_, idx) => ({ stationIndex: idx, arr: "12:00:00", dep: "12:00:30", type: "stop" }))
+                schedule: appData.stations.map((_, idx) => ({ stationIndex: idx, arr: "", dep: "", type: "stop" }))
             });
             renderDiaForm();
         }
@@ -763,7 +753,7 @@
             switchScreen('zaisen');
         }
 
-        /* --- 【路線設定画面の処理】 --- */
+        /* --- 【路線設定】 --- */
         function syncRouteInputsToMemory() {
             const titleInput = document.getElementById('route-title');
             if (titleInput) appData.name = titleInput.value || "";
@@ -784,6 +774,10 @@
             document.getElementById('route-title').value = appData.name || "";
             const container = document.getElementById('station-inputs');
             container.innerHTML = '';
+            if (appData.stations.length === 0) {
+                container.innerHTML = '<p style="color:#888;">駅が登録されていません。「＋ 駅追加」で追加してください。</p>';
+                return;
+            }
             appData.stations.forEach((st, idx) => {
                 const row = document.createElement('div');
                 row.className = 'row-group';
@@ -794,7 +788,7 @@
                     <span style="font-weight:bold;">駅${idx + 1}:</span>
                     <input type="text" value="${st.name}" id="st-name-${idx}" placeholder="駅名" style="width: 100px;">
                     <input type="text" value="${st.code || ''}" id="st-code-${idx}" placeholder="駅番号" style="width: 60px;">
-                    <input type="text" value="${st.stopTypes || ''}" id="st-stoptypes-${idx}" placeholder="停車種別 (例: 普通, 急行, 特急)" style="flex:1; min-width: 180px;">
+                    <input type="text" value="${st.stopTypes || ''}" id="st-stoptypes-${idx}" placeholder="停車種別 (例: 普通, 急行)" style="flex:1; min-width: 180px;">
                     <button onclick="removeStation(${idx})" style="background:#e74c3c; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">削除</button>
                 `;
                 container.appendChild(row);
@@ -803,7 +797,7 @@
 
         function addStationRow() {
             syncRouteInputsToMemory();
-            appData.stations.push({ name: "新駅", code: `${appData.stations.length + 1}`, stopTypes: "普通" });
+            appData.stations.push({ name: "", code: "", stopTypes: "" });
             renderSettingForm();
         }
 
@@ -820,7 +814,7 @@
             switchScreen('zaisen');
         }
 
-        /* --- 【リセット機能モーダル処理】 --- */
+        /* --- 【リセット機能】 --- */
         function openResetModal() {
             document.getElementById('reset-modal').classList.add('active');
         }
@@ -837,7 +831,7 @@
                     alert('ダイヤ情報をクリアしました');
                 }
             } else if (type === 'station') {
-                if (confirm('路線名・駅リストをクリアしますか？（列車データの駅参照もリセットされます）')) {
+                if (confirm('路線名・駅リストをクリアしますか？')) {
                     appData.name = "";
                     appData.stations = [];
                     appData.trains = [];
@@ -845,15 +839,10 @@
                     alert('路線・駅設定をクリアしました');
                 }
             } else if (type === 'all') {
-                if (confirm('本当にすべての情報（路線・駅・種別・ダイヤ）を全消去しますか？')) {
+                if (confirm('本当にすべての情報を全消去しますか？')) {
                     localStorage.removeItem('railwayAppData_v3');
-                    appData = {
-                        name: "",
-                        types: [],
-                        stations: [],
-                        trains: []
-                    };
-                    alert('全データを完全にクリアしました');
+                    appData = { name: "", types: [], stations: [], trains: [] };
+                    alert('全データをクリアしました');
                 }
             }
             closeResetModal();
@@ -861,7 +850,7 @@
             renderZaisen();
         }
 
-        /* --- ストレージ・ファイルIO --- */
+        /* --- ストレージ保存・読み込み --- */
         function saveStorage() { localStorage.setItem('railwayAppData_v3', JSON.stringify(appData)); }
         function loadStorage() {
             const saved = localStorage.getItem('railwayAppData_v3');
