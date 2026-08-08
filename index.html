@@ -151,12 +151,13 @@
             flex-wrap: wrap;
             gap: 3px;
             justify-content: flex-end;
-            max-width: 110px;
+            max-width: 150px;
             margin-bottom: 4px;
         }
         .stop-type-icon {
-            width: 18px;
+            min-width: 18px;
             height: 18px;
+            padding: 0 4px;
             border-radius: 3px;
             color: white;
             font-size: 0.65rem;
@@ -165,6 +166,8 @@
             align-items: center;
             justify-content: center;
             box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            box-sizing: border-box;
+            white-space: nowrap;
         }
 
         /* 中央の駅ドット */
@@ -217,7 +220,7 @@
             border-radius: 8px;
             margin-bottom: 15px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            max-width: 600px;
+            max-width: 650px;
             margin-left: auto;
             margin-right: auto;
         }
@@ -264,7 +267,7 @@
             color: white;
             font-size: 0.75rem;
             font-weight: bold;
-            min-width: 50px;
+            min-width: 40px;
             text-align: center;
         }
 
@@ -344,7 +347,7 @@
     <div id="screen-type" class="screen">
         <div class="setting-card">
             <h3>列車種別・カラー設定</h3>
-            <p style="font-size: 0.85rem; color: #666;">種別名と表示カラーを設定します。</p>
+            <p style="font-size: 0.85rem; color: #666;">種別名を入力すると略称（バッジ文字）が自動補完されます。略称欄は直接自由に変更可能です。</p>
             <div id="type-inputs"></div>
             <button class="action-btn" onclick="addTypeRow()">＋ 種別追加</button>
             <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveTypeSettings()">種別設定を保存</button>
@@ -363,7 +366,7 @@
         <div class="setting-card">
             <h3>路線・駅設定</h3>
             <input type="text" id="route-title" placeholder="路線名 (例:〇〇線)" style="width: 90%; margin-bottom: 12px;">
-            <p style="font-size: 0.8rem; color: #666; margin-top:-5px;">※停車種別はカンマ「,」区切りで複数指定できます（例: 普通, 急行, 特急）</p>
+            <p style="font-size: 0.8rem; color: #666; margin-top:-5px;">※停車種別はカンマ「,」区切りで複数指定できます（例: 普通, 急行, 特別急行）</p>
             <div id="station-inputs"></div>
             <button class="action-btn" onclick="addStationRow()">＋ 駅追加</button>
             <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveRouteSettings()">保存</button>
@@ -469,7 +472,6 @@
             return h * 3600 + m * 60 + s;
         }
 
-        // 時刻文字列を正しくフォーマットする処理（「9:55」→「09:55:00」など）
         function normalizeTimeString(timeStr) {
             if (!timeStr) return "";
             const parts = timeStr.trim().split(':');
@@ -485,6 +487,28 @@
             } else {
                 return `${h}:${m}`;
             }
+        }
+
+        /* --- 自動略称生成関数 --- */
+        function getAutoShortName(name) {
+            if (!name) return "";
+            // アルファベット・数字（半角全角）記号のみで構成されている場合はそのまま全文字を返す（例: NEX → NEX）
+            if (/^[a-zA-Z0-9\s\-\_Ａ-Ｚａ-ｚ０-９]+$/.test(name)) {
+                return name;
+            }
+            // 漢字やひらがな・カタカナ等が含まれる場合は先頭1文字を返す（例: 特別急行 → 特）
+            return Array.from(name)[0] || "";
+        }
+
+        /* --- 表示用略称取得（手動入力があれば最優先、無ければ自動計算） --- */
+        function getEffectiveShortName(tp, defaultName = "") {
+            if (!tp) {
+                return getAutoShortName(defaultName);
+            }
+            if (tp.shortName !== undefined && tp.shortName !== null && tp.shortName.trim() !== "") {
+                return tp.shortName.trim();
+            }
+            return getAutoShortName(tp.name || defaultName);
         }
 
         function switchScreen(target) {
@@ -532,25 +556,50 @@
             appData.types.forEach((tp, idx) => {
                 const row = document.createElement('div');
                 row.className = 'row-group';
+                
+                // 略称初期入力値の決定
+                const shortVal = tp.shortName !== undefined ? tp.shortName : getAutoShortName(tp.name);
+
                 row.innerHTML = `
-                    <span style="font-weight:bold; width: 60px;">種別 ${idx + 1}:</span>
-                    <input type="text" value="${tp.name}" id="type-name-${idx}" placeholder="種別名 (例: 急行)" style="flex: 2;" oninput="updateTypePreview(${idx})">
+                    <span style="font-weight:bold; width: 50px;">種別${idx + 1}:</span>
+                    <input type="text" value="${tp.name || ''}" id="type-name-${idx}" placeholder="種別名 (例: 特別急行/NEX)" style="flex: 2; min-width: 110px;" oninput="onTypeNameInput(${idx})">
+                    <input type="text" value="${shortVal}" id="type-short-${idx}" placeholder="略称" style="width: 100px;" oninput="updateTypePreview(${idx})">
                     <input type="color" value="${tp.color || '#78909c'}" id="type-color-${idx}" onchange="updateTypePreview(${idx})">
-                    <input type="text" value="${tp.color || '#78909c'}" id="type-hex-${idx}" style="width: 80px;" placeholder="#1e88e5" oninput="syncColorPickerFromHex(${idx})">
-                    <span class="type-preview-badge" id="type-preview-${idx}" style="background-color: ${tp.color || '#78909c'};">${tp.name || 'プレビュー'}</span>
+                    <input type="text" value="${tp.color || '#78909c'}" id="type-hex-${idx}" style="width: 70px;" placeholder="#1e88e5" oninput="syncColorPickerFromHex(${idx})">
+                    <span class="type-preview-badge" id="type-preview-${idx}" style="background-color: ${tp.color || '#78909c'};">プレビュー</span>
                     <button onclick="removeTypeRow(${idx})" style="background:#e74c3c; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">削除</button>
                 `;
                 container.appendChild(row);
+                updateTypePreview(idx);
             });
+        }
+
+        function onTypeNameInput(idx) {
+            const nameEl = document.getElementById(`type-name-${idx}`);
+            const shortEl = document.getElementById(`type-short-${idx}`);
+            
+            // ユーザーがまだ手動変更を行っていない（または自動生成値のまま）場合、種別名に合わせて自動補完する
+            if (shortEl && (!shortEl.dataset.userModified || shortEl.dataset.userModified === "false")) {
+                shortEl.value = getAutoShortName(nameEl.value);
+            }
+            updateTypePreview(idx);
         }
 
         function updateTypePreview(idx) {
             const name = document.getElementById(`type-name-${idx}`).value;
+            const shortInput = document.getElementById(`type-short-${idx}`);
             const color = document.getElementById(`type-color-${idx}`).value;
+            
+            // 略称欄が直接編集されたか記録
+            if (event && event.target === shortInput) {
+                shortInput.dataset.userModified = "true";
+            }
+
             document.getElementById(`type-hex-${idx}`).value = color;
             const preview = document.getElementById(`type-preview-${idx}`);
             if (preview) {
-                preview.innerText = name || 'プレビュー';
+                const displayChar = shortInput.value.trim() !== "" ? shortInput.value : getAutoShortName(name);
+                preview.innerText = displayChar || 'プレビュー';
                 preview.style.backgroundColor = color;
             }
         }
@@ -566,9 +615,11 @@
         function syncTypeInputsToMemory() {
             appData.types = appData.types.map((tp, idx) => {
                 const nameEl = document.getElementById(`type-name-${idx}`);
+                const shortEl = document.getElementById(`type-short-${idx}`);
                 const colorEl = document.getElementById(`type-hex-${idx}`);
                 return {
                     name: nameEl ? nameEl.value : tp.name,
+                    shortName: shortEl ? shortEl.value : tp.shortName,
                     color: colorEl ? colorEl.value : tp.color
                 };
             });
@@ -576,7 +627,7 @@
 
         function addTypeRow() {
             syncTypeInputsToMemory();
-            appData.types.push({ name: "", color: "#1e88e5" });
+            appData.types.push({ name: "", shortName: "", color: "#1e88e5" });
             renderTypeForm();
         }
 
@@ -619,9 +670,13 @@
                     const typeList = st.stopTypes.split(/[,、]/).map(s => s.trim()).filter(s => s);
                     let iconsHtml = '';
                     typeList.forEach(tName => {
-                        const color = getTrainColor(tName);
-                        const initialChar = tName.charAt(0) || '';
-                        iconsHtml += `<div class="stop-type-icon" style="background-color: ${color};" title="${tName}">${initialChar}</div>`;
+                        const typeObj = appData.types.find(tp => tp.name === tName);
+                        const color = typeObj ? typeObj.color : '#78909c';
+                        
+                        // バッジ表示文字を取得（設定があればそれを使用、無ければ自動判定）
+                        const displayChar = getEffectiveShortName(typeObj, tName);
+                        
+                        iconsHtml += `<div class="stop-type-icon" style="background-color: ${color};" title="${tName}">${displayChar}</div>`;
                     });
                     if (iconsHtml) {
                         stopTypeHtml = `<div class="stop-types-wrapper">${iconsHtml}</div>`;
@@ -860,7 +915,7 @@
             syncDiaInputsToMemory();
             saveStorage();
             alert('ダイヤ設定を保存しました');
-            renderDiaForm(); // 自動補正された時刻文字列を再描画
+            renderDiaForm();
             switchScreen('zaisen');
         }
 
