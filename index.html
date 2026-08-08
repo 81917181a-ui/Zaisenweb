@@ -121,21 +121,20 @@
             align-items: flex-end;
         }
 
-        /* 【変更点】駅ナンバリング用の円サイズと文字サイズを最適化 */
         .st-code {
             border: 2px solid #0288d1;
             color: #0288d1;
             border-radius: 50%;
-            width: 30px;            /* 22px -> 30px に調整 */
-            height: 30px;           /* 22px -> 30px に調整 */
+            width: 30px;
+            height: 30px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.6rem;      /* 4文字でも収まる文字サイズ */
+            font-size: 0.6rem;
             font-weight: bold;
             margin-bottom: 2px;
             box-sizing: border-box;
-            letter-spacing: -0.5px;  /* 文字間隔を詰めてはみ出しを防止 */
+            letter-spacing: -0.5px;
             line-height: 1;
         }
 
@@ -323,6 +322,7 @@
                 <button id="btn-type" onclick="switchScreen('type')">種別設定</button>
                 <button id="btn-setting" onclick="switchScreen('setting')">路線設定</button>
                 <button id="btn-dia" onclick="switchScreen('dia')">ダイヤ設定</button>
+                <button id="btn-general" onclick="switchScreen('general')">一般設定</button>
             </div>
         </div>
     </header>
@@ -380,6 +380,24 @@
         </div>
     </div>
 
+    <!-- 【5. 一般設定画面】 -->
+    <div id="screen-general" class="screen">
+        <div class="setting-card">
+            <h3>一般設定</h3>
+            <p style="font-size: 0.85rem; color: #666;">路線図上の走行位置（左右表示）の割り当てを設定します。</p>
+            
+            <div style="margin-top: 15px;">
+                <label style="font-weight: bold; display: block; margin-bottom: 8px;">走行トラック位置設定:</label>
+                <select id="general-track-dir" style="width: 100%; padding: 8px;">
+                    <option value="up-left">上り（上方向行き）：左走行 / 下り（下方向行き）：右走行</option>
+                    <option value="down-left">下り（下方向行き）：左走行 / 上り（上方向行き）：右走行</option>
+                </select>
+            </div>
+
+            <button class="action-btn" style="background: #2e7d32; margin-top: 20px;" onclick="saveGeneralSettings()">設定を保存</button>
+        </div>
+    </div>
+
     <!-- リセットモーダル -->
     <div id="reset-modal" class="modal-overlay">
         <div class="modal-content">
@@ -399,7 +417,10 @@
             name: "",
             types: [],
             stations: [],
-            trains: []
+            trains: [],
+            general: {
+                trackDir: "up-left"
+            }
         };
 
         setInterval(() => {
@@ -437,7 +458,7 @@
         }
 
         function switchScreen(target) {
-            ['zaisen', 'type', 'setting', 'dia'].forEach(s => {
+            ['zaisen', 'type', 'setting', 'dia', 'general'].forEach(s => {
                 document.getElementById(`screen-${s}`).classList.remove('active');
                 document.getElementById(`btn-${s}`).classList.remove('active');
             });
@@ -447,7 +468,24 @@
             if (target === 'type') renderTypeForm();
             if (target === 'setting') renderSettingForm();
             if (target === 'dia') renderDiaForm();
+            if (target === 'general') renderGeneralForm();
             if (target === 'zaisen') renderZaisen();
+        }
+
+        /* --- 【一般設定】 --- */
+        function renderGeneralForm() {
+            const trackSelect = document.getElementById('general-track-dir');
+            if (appData.general && appData.general.trackDir) {
+                trackSelect.value = appData.general.trackDir;
+            }
+        }
+
+        function saveGeneralSettings() {
+            if (!appData.general) appData.general = {};
+            appData.general.trackDir = document.getElementById('general-track-dir').value;
+            saveStorage();
+            alert('一般設定を保存しました');
+            switchScreen('zaisen');
         }
 
         /* --- 【種別設定】 --- */
@@ -537,6 +575,8 @@
                 return;
             }
 
+            const trackDir = (appData.general && appData.general.trackDir) ? appData.general.trackDir : "up-left";
+
             appData.stations.forEach((st, idx) => {
                 const stRow = document.createElement('div');
                 stRow.className = 'v-station-row';
@@ -563,7 +603,9 @@
                     const bgColor = getTrainColor(t.trainType);
                     const dirClass = t.direction === 'down' ? 'dir-arrow-down' : 'dir-arrow-up';
                     const html = `<div class="train-icon ${dirClass}" style="top:50%; background-color: ${bgColor};">${t.trainType} ${t.name}</div>`;
-                    if (t.direction === 'down') leftTrainHtml += html;
+                    
+                    const isLeft = (trackDir === 'up-left') ? (t.direction === 'up') : (t.direction === 'down');
+                    if (isLeft) leftTrainHtml += html;
                     else rightTrainHtml += html;
                 });
 
@@ -595,7 +637,8 @@
                         const topPercent = Math.max(10, Math.min(90, t.progress * 100));
                         const html = `<div class="train-icon ${dirClass}" style="top:${topPercent}%; background-color: ${bgColor};">${t.trainType} ${t.name}</div>`;
                         
-                        if (t.direction === 'down') leftBetweenHtml += html;
+                        const isLeft = (trackDir === 'up-left') ? (t.direction === 'up') : (t.direction === 'down');
+                        if (isLeft) leftBetweenHtml += html;
                         else rightBetweenHtml += html;
                     });
 
@@ -680,8 +723,18 @@
             }
 
             appData.trains.forEach((train, tIdx) => {
+                const isReversed = !!train.isReversed;
+                let stationOrder = appData.stations.map((st, idx) => ({ station: st, originalIndex: idx }));
+                
+                // 列車個別の反転フラグがtrueの場合、表示順のみ反転する
+                if (isReversed) {
+                    stationOrder.reverse();
+                }
+
                 let schedHtml = '';
-                appData.stations.forEach((st, sIdx) => {
+                stationOrder.forEach(item => {
+                    const sIdx = item.originalIndex;
+                    const st = item.station;
                     const found = (train.schedule || []).find(sc => sc.stationIndex === sIdx) || { arr: "", dep: "", type: "stop" };
                     schedHtml += `
                         <div class="row-group" style="font-size:0.85rem;">
@@ -704,12 +757,20 @@
                             ${typeOptions || '<option value="">(種別未設定)</option>'}
                         </select>
                         <input type="text" value="${train.name || ''}" id="train-name-${tIdx}" style="font-weight:bold; flex:1;" placeholder="列車名 / 列車番号" >
+                        <button onclick="toggleTrainDirection(${tIdx})" style="background:#8e44ad; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">⇄ 駅順反転</button>
                         <button onclick="removeTrain(${tIdx})" style="background:#e74c3c; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">削除</button>
                     </div>
                     ${schedHtml}
                 `;
                 container.appendChild(card);
             });
+        }
+
+        // 列車単位での入力フォーム反転切り替え処理
+        function toggleTrainDirection(tIdx) {
+            syncDiaInputsToMemory();
+            appData.trains[tIdx].isReversed = !appData.trains[tIdx].isReversed;
+            renderDiaForm();
         }
 
         function syncDiaInputsToMemory() {
@@ -740,6 +801,7 @@
             appData.trains.push({
                 name: "",
                 type: defaultType,
+                isReversed: false,
                 schedule: appData.stations.map((_, idx) => ({ stationIndex: idx, arr: "", dep: "", type: "stop" }))
             });
             renderDiaForm();
@@ -846,7 +908,7 @@
             } else if (type === 'all') {
                 if (confirm('本当にすべての情報を全消去しますか？')) {
                     localStorage.removeItem('railwayAppData_v3');
-                    appData = { name: "", types: [], stations: [], trains: [] };
+                    appData = { name: "", types: [], stations: [], trains: [], general: { trackDir: "up-left" } };
                     alert('全データをクリアしました');
                 }
             }
@@ -859,7 +921,10 @@
         function saveStorage() { localStorage.setItem('railwayAppData_v3', JSON.stringify(appData)); }
         function loadStorage() {
             const saved = localStorage.getItem('railwayAppData_v3');
-            if (saved) appData = JSON.parse(saved);
+            if (saved) {
+                appData = JSON.parse(saved);
+                if (!appData.general) appData.general = { trackDir: "up-left" };
+            }
         }
 
         function exportJSON() {
