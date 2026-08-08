@@ -237,6 +237,48 @@
             min-width: 50px;
             text-align: center;
         }
+
+        /* モーダル表示用スタイル */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal-content {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 360px;
+            width: 90%;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        .modal-btn-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .modal-btn {
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            color: white;
+        }
+        .btn-reset-dia { background: #f39c12; }
+        .btn-reset-st { background: #e67e22; }
+        .btn-reset-all { background: #c0392b; }
+        .btn-cancel { background: #95a5a6; }
     </style>
 </head>
 <body>
@@ -284,7 +326,7 @@
             <h3>データ操作</h3>
             <button class="action-btn" onclick="exportJSON()">JSON保存</button>
             <input type="file" id="import-file-setting" accept=".oud,.oudia,.csv,.txt,.json,*" onchange="importAnyFile(event)" style="margin-left: 10px;">
-            <button class="reset-btn" style="float: right;" onclick="resetAllData()">リセット</button>
+            <button class="reset-btn" style="float: right;" onclick="openResetModal()">リセット</button>
         </div>
 
         <div class="setting-card">
@@ -303,6 +345,20 @@
             <div id="train-inputs"></div>
             <button class="action-btn" onclick="addTrainRow()">＋ 列車追加</button>
             <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveDiaSettings()">保存</button>
+        </div>
+    </div>
+
+    <!-- 【リセットモーダルダイアログ】 -->
+    <div id="reset-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 style="margin-top:0;">リセット項目の選択</h3>
+            <p style="font-size: 0.85rem; color: #666;">削除する項目を選択してください。</p>
+            <div class="modal-btn-list">
+                <button class="modal-btn btn-reset-dia" onclick="executeReset('dia')">ダイヤのみリセット</button>
+                <button class="modal-btn btn-reset-st" onclick="executeReset('station')">駅・路線設定のみリセット</button>
+                <button class="modal-btn btn-reset-all" onclick="executeReset('all')">すべてリセット (全消去)</button>
+                <button class="modal-btn btn-cancel" onclick="closeResetModal()">キャンセル</button>
+            </div>
         </div>
     </div>
 
@@ -444,12 +500,17 @@
         /* --- 【走行位置画面の描画】 --- */
         function renderZaisen() {
             loadStorage();
-            document.getElementById('display-route-title').innerText = appData.name || "本線";
+            document.getElementById('display-route-title').innerText = appData.name || "未設定";
             const wrapper = document.getElementById('vertical-route-view');
             wrapper.innerHTML = '<div class="vertical-line"></div>';
 
             const currentSec = getCurrentTimeSec();
             const trainPositions = getCalculatedTrainPositions(currentSec);
+
+            if (!appData.stations || appData.stations.length === 0) {
+                wrapper.innerHTML = '<p style="text-align:center; color:#888; padding:20px;">駅が登録されていません</p>';
+                return;
+            }
 
             appData.stations.forEach((st, idx) => {
                 const stRow = document.createElement('div');
@@ -572,6 +633,12 @@
         function renderDiaForm() {
             const container = document.getElementById('train-inputs');
             container.innerHTML = '';
+
+            if (appData.trains.length === 0) {
+                container.innerHTML = '<p style="color:#888;">登録されている列車はありません。</p>';
+                return;
+            }
+
             appData.trains.forEach((train, tIdx) => {
                 let schedHtml = '';
                 appData.stations.forEach((st, sIdx) => {
@@ -654,7 +721,7 @@
         /* --- 【路線設定画面の処理】 --- */
         function syncRouteInputsToMemory() {
             const titleInput = document.getElementById('route-title');
-            if (titleInput) appData.name = titleInput.value || "本線";
+            if (titleInput) appData.name = titleInput.value || "";
             
             appData.stations = appData.stations.map((st, idx) => {
                 const nameEl = document.getElementById(`st-name-${idx}`);
@@ -667,7 +734,7 @@
         }
 
         function renderSettingForm() {
-            document.getElementById('route-title').value = appData.name;
+            document.getElementById('route-title').value = appData.name || "";
             const container = document.getElementById('station-inputs');
             container.innerHTML = '';
             appData.stations.forEach((st, idx) => {
@@ -702,18 +769,54 @@
             switchScreen('zaisen');
         }
 
+        /* --- 【リセット機能モーダル処理】 --- */
+        function openResetModal() {
+            document.getElementById('reset-modal').classList.add('active');
+        }
+
+        function closeResetModal() {
+            document.getElementById('reset-modal').classList.remove('active');
+        }
+
+        function executeReset(type) {
+            if (type === 'dia') {
+                if (confirm('ダイヤ設定（全列車データ）を消去しますか？')) {
+                    appData.trains = [];
+                    saveStorage();
+                    alert('ダイヤ情報をクリアしました');
+                }
+            } else if (type === 'station') {
+                if (confirm('路線名・駅リストをクリアしますか？（列車データの駅参照もリセットされます）')) {
+                    appData.name = "";
+                    appData.stations = [];
+                    appData.trains = [];
+                    saveStorage();
+                    alert('路線・駅設定をクリアしました');
+                }
+            } else if (type === 'all') {
+                if (confirm('本当にすべての情報（路線・駅・種別・ダイヤ）を全消去しますか？')) {
+                    localStorage.removeItem('railwayAppData_v3');
+                    appData = {
+                        name: "",
+                        types: [],
+                        stations: [],
+                        trains: []
+                    };
+                    alert('全データを完全にクリアしました');
+                }
+            }
+            closeResetModal();
+            renderSettingForm();
+            renderZaisen();
+        }
+
         /* --- ストレージ・ファイルIO --- */
         function saveStorage() { localStorage.setItem('railwayAppData_v3', JSON.stringify(appData)); }
         function loadStorage() {
             const saved = localStorage.getItem('railwayAppData_v3');
             if (saved) appData = JSON.parse(saved);
         }
-        function resetAllData() {
-            if (confirm('すべてのデータを初期化しますか？')) {
-                localStorage.removeItem('railwayAppData_v3');
-                location.reload();
-            }
-        }
+
         function exportJSON() {
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData, null, 2));
             const dl = document.createElement('a');
