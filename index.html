@@ -34,16 +34,35 @@
         }
         #sync-status {
             font-size: 0.75rem;
-            background: #f39c12;
+            background: #27ae60;
             color: white;
-            padding: 3px 8px;
+            padding: 4px 8px;
             border-radius: 10px;
+            font-weight: bold;
+        }
+        #sync-status.unsaved {
+            background: #e67e22;
         }
         #live-clock {
             font-size: 0.95rem;
             background: rgba(0,0,0,0.25);
             padding: 4px 8px;
             border-radius: 4px;
+        }
+        .btn-push-firebase {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.85rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: background 0.2s;
+        }
+        .btn-push-firebase:hover {
+            background: #2196f3;
         }
         .tab-buttons button {
             background: rgba(255,255,255,0.15);
@@ -332,7 +351,8 @@
     <header>
         <div class="header-title">列車管理システム</div>
         <div class="header-right">
-            <div id="sync-status">接続中...</div>
+            <div id="sync-status">同期済</div>
+            <button class="btn-push-firebase" onclick="pushToFirebase()">全員反映</button>
             <div id="live-clock">--:--:--</div>
             <div class="tab-buttons">
                 <button id="btn-zaisen" class="active" onclick="switchScreen('zaisen')">走行位置</button>
@@ -364,7 +384,7 @@
             <p style="font-size: 0.85rem; color: #666;">種別名、路線図上の「表示文字（略称）」、カラーを設定します。</p>
             <div id="type-inputs"></div>
             <button class="action-btn" onclick="addTypeRow()">＋ 種別追加</button>
-            <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveTypeSettings()">種別設定を保存</button>
+            <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveTypeSettings()">ローカル保存</button>
         </div>
     </div>
 
@@ -376,7 +396,7 @@
             <p style="font-size: 0.8rem; color: #666; margin-top:-5px;">※停車種別はカンマ「,」区切りで複数指定できます（例: 普通, 急行, ホリデー快速）</p>
             <div id="station-inputs"></div>
             <button class="action-btn" onclick="addStationRow()">＋ 駅追加</button>
-            <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveRouteSettings()">保存</button>
+            <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveRouteSettings()">ローカル保存</button>
         </div>
     </div>
 
@@ -386,13 +406,12 @@
             <h3>列車・時刻設定</h3>
             <div id="train-inputs"></div>
             <button class="action-btn" onclick="addTrainRow()">＋ 列車追加</button>
-            <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveDiaSettings()">保存</button>
+            <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveDiaSettings()">ローカル保存</button>
         </div>
     </div>
 
     <!-- 【5. 一般設定画面】 -->
     <div id="screen-general" class="screen">
-        <!-- 移動したデータ操作エリア -->
         <div class="setting-card">
             <h3>データ操作</h3>
             <div class="row-group" style="justify-content: space-between;">
@@ -425,7 +444,7 @@
                 </select>
             </div>
 
-            <button class="action-btn" style="background: #2e7d32; margin-top: 20px;" onclick="saveGeneralSettings()">設定を保存</button>
+            <button class="action-btn" style="background: #2e7d32; margin-top: 20px;" onclick="saveGeneralSettings()">ローカル保存</button>
         </div>
     </div>
 
@@ -471,8 +490,10 @@
             }
         };
 
-        // Firebaseリアルタイム同期イベント受信
-        appDataRef.on('value', (snapshot) => {
+        let isUnsaved = false; // 未反映フラグ
+
+        // 起動時に1回だけFirebaseからデータを読み込み（常時監視しないことで通信量を節約）
+        appDataRef.once('value').then((snapshot) => {
             const data = snapshot.val();
             if (data) {
                 appData = data;
@@ -480,29 +501,48 @@
                 if (!appData.stations) appData.stations = [];
                 if (!appData.trains) appData.trains = [];
                 if (!appData.general) appData.general = { trackDir: "up-left", timeUnit: "sec" };
-            } else {
-                saveStorage();
             }
-
-            const activeScreen = document.querySelector('.screen.active').id.replace('screen-', '');
-            if (activeScreen === 'zaisen') renderZaisen();
-            if (activeScreen === 'type') renderTypeForm();
-            if (activeScreen === 'setting') renderSettingForm();
-            if (activeScreen === 'dia') renderDiaForm();
-            if (activeScreen === 'general') renderGeneralForm();
-
-            document.getElementById('sync-status').innerText = "リアルタイム同期中";
-            document.getElementById('sync-status').style.background = "#27ae60";
-        }, (error) => {
-            console.error("Firebase Error: ", error);
+            markSaved();
+            renderZaisen();
+        }).catch((error) => {
+            console.error("Firebase Read Error: ", error);
             document.getElementById('sync-status').innerText = "通信エラー";
             document.getElementById('sync-status').style.background = "#e74c3c";
         });
 
-        function saveStorage() {
-            document.getElementById('sync-status').innerText = "送信中...";
-            document.getElementById('sync-status').style.background = "#f39c12";
-            appDataRef.set(appData);
+        // 状態変更時のステータス更新関数
+        function markUnsaved() {
+            isUnsaved = true;
+            const statusEl = document.getElementById('sync-status');
+            statusEl.innerText = "未反映の変更あり";
+            statusEl.classList.add('unsaved');
+        }
+
+        function markSaved() {
+            isUnsaved = false;
+            const statusEl = document.getElementById('sync-status');
+            statusEl.innerText = "同期済";
+            statusEl.classList.remove('unsaved');
+        }
+
+        // 手動で「全員反映」ボタンが押されたときのみ通信を実行
+        function pushToFirebase() {
+            if (confirm("現在の全データを接続している全員の画面へ反映しますか？")) {
+                const statusEl = document.getElementById('sync-status');
+                statusEl.innerText = "送信中...";
+                statusEl.style.background = "#f39c12";
+
+                appDataRef.set(appData).then(() => {
+                    markSaved();
+                    alert("全員への反映が完了しました！");
+                    renderZaisen();
+                }).catch((error) => {
+                    console.error("Firebase Write Error:", error);
+                    alert("送信に失敗しました。接続状態をご確認ください。");
+                    statusEl.innerText = "送信エラー";
+                    statusEl.style.background = "#e74c3c";
+                });
+            }
         }
 
         setInterval(() => {
@@ -571,8 +611,8 @@
             if (!appData.general) appData.general = {};
             appData.general.trackDir = document.getElementById('general-track-dir').value;
             appData.general.timeUnit = document.getElementById('general-time-unit').value;
-            saveStorage();
-            alert('一般設定を保存しました');
+            markUnsaved();
+            alert('一般設定を保存しました（※「全員反映」を押すと全員へ反映されます）');
             switchScreen('zaisen');
         }
 
@@ -651,8 +691,8 @@
 
         function saveTypeSettings() {
             syncTypeInputsToMemory();
-            saveStorage();
-            alert('種別設定を保存しました');
+            markUnsaved();
+            alert('種別設定を保存しました（※「全員反映」を押すと全員へ反映されます）');
             switchScreen('zaisen');
         }
 
@@ -921,8 +961,8 @@
 
         function saveDiaSettings() {
             syncDiaInputsToMemory();
-            saveStorage();
-            alert('ダイヤ設定を保存しました');
+            markUnsaved();
+            alert('ダイヤ設定を保存しました（※「全員反映」を押すと全員へ反映されます）');
             switchScreen('zaisen');
         }
 
@@ -982,8 +1022,8 @@
 
         function saveRouteSettings() {
             syncRouteInputsToMemory();
-            saveStorage();
-            alert('路線設定を保存しました');
+            markUnsaved();
+            alert('路線設定を保存しました（※「全員反映」を押すと全員へ反映されます）');
             switchScreen('zaisen');
         }
 
@@ -1000,22 +1040,22 @@
             if (type === 'dia') {
                 if (confirm('ダイヤ設定（全列車データ）を消去しますか？')) {
                     appData.trains = [];
-                    saveStorage();
-                    alert('ダイヤ情報をクリアしました');
+                    markUnsaved();
+                    alert('ダイヤ情報をクリアしました（※「全員反映」を押すと反映されます）');
                 }
             } else if (type === 'station') {
                 if (confirm('路線名・駅リストをクリアしますか？')) {
                     appData.name = "";
                     appData.stations = [];
                     appData.trains = [];
-                    saveStorage();
-                    alert('路線・駅設定をクリアしました');
+                    markUnsaved();
+                    alert('路線・駅設定をクリアしました（※「全員反映」を押すと反映されます）');
                 }
             } else if (type === 'all') {
                 if (confirm('本当にすべての情報を全消去しますか？')) {
                     appData = { name: "", types: [], stations: [], trains: [], general: { trackDir: "up-left", timeUnit: "sec" } };
-                    saveStorage();
-                    alert('全データをクリアしました');
+                    markUnsaved();
+                    alert('全データをクリアしました（※「全員反映」を押すと反映されます）');
                 }
             }
             closeResetModal();
@@ -1029,42 +1069,50 @@
             dl.click();
         }
 
-        /* --- 【OuDia2 (.oud2) 解析 & インポート】 --- */
+        /* --- 【完全版 OuDia / OuDia2 (.oud / .oud2) 解析機能】 --- */
         function parseOuDia2(text) {
             const lines = text.split(/\r?\n/);
             const root = { FileType: '', Eki: [], Syubetsu: [], Kudari: [], Nobori: [], RouteName: '' };
-            let currentSection = '';
+            let currentPath = [];
             let currentObj = null;
 
-            for (let line of lines) {
-                line = line.trim();
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
                 if (!line) continue;
 
                 if (line.startsWith('FileType=')) {
                     root.FileType = line.split('=')[1];
                     continue;
                 }
-                if (line.startsWith('DispRessyaJikanTyuuiRasen.Rosenmei=')) {
+                if (line.includes('Rosenmei=')) {
                     root.RouteName = line.split('=')[1] || '';
                     continue;
                 }
 
                 if (line.endsWith('.')) {
-                    const name = line.slice(0, -1);
-                    if (['Eki', 'Ressyasyubetsu', 'Ressya'].includes(name)) {
-                        currentSection = name;
+                    const secName = line.slice(0, -1);
+                    currentPath.push(secName);
+                    
+                    if (secName === 'Eki' || secName === 'Ressyasyubetsu' || secName === 'Ressya') {
                         currentObj = {};
                     }
                     continue;
                 }
 
                 if (line === '.') {
-                    if (currentObj) {
-                        if (currentSection === 'Eki') root.Eki.push(currentObj);
-                        else if (currentSection === 'Ressyasyubetsu') root.Syubetsu.push(currentObj);
-                        else if (currentSection === 'Ressya') {
-                            if (currentObj.Houkou === 'Kudari') root.Kudari.push(currentObj);
-                            else root.Nobori.push(currentObj);
+                    const lastSec = currentPath.pop();
+                    if (lastSec === 'Eki' && currentObj) {
+                        root.Eki.push(currentObj);
+                        currentObj = null;
+                    } else if (lastSec === 'Ressyasyubetsu' && currentObj) {
+                        root.Syubetsu.push(currentObj);
+                        currentObj = null;
+                    } else if (lastSec === 'Ressya' && currentObj) {
+                        const parentSec = currentPath[currentPath.length - 1];
+                        if (parentSec === 'Kudari' || currentObj.Houkou === 'Kudari') {
+                            root.Kudari.push(currentObj);
+                        } else {
+                            root.Nobori.push(currentObj);
                         }
                         currentObj = null;
                     }
@@ -1082,13 +1130,20 @@
             return root;
         }
 
-        // 時間文字列（例: 805 または 80512）を HH:MM:SS / HH:MM 形式にフォーマット
         function formatOudTime(tStr) {
             if (!tStr) return "";
-            let s = tStr.padStart(6, '0');
-            let h = s.substring(0, 2);
-            let m = s.substring(2, 4);
-            let sec = s.substring(4, 6);
+            let s = tStr.padStart(tStr.length <= 4 ? 4 : 6, '0');
+            let h = "", m = "", sec = "00";
+            if (s.length === 4) {
+                h = s.substring(0, 2);
+                m = s.substring(2, 4);
+            } else if (s.length === 6) {
+                h = s.substring(0, 2);
+                m = s.substring(2, 4);
+                sec = s.substring(4, 6);
+            } else {
+                return "";
+            }
             return `${h}:${m}:${sec}`;
         }
 
@@ -1103,61 +1158,68 @@
                 reader.onload = function(e) {
                     try {
                         const arrayBuffer = e.target.result;
-                        const text = new TextDecoder('shift_jis').decode(arrayBuffer);
+                        let text = "";
+                        try {
+                            text = new TextDecoder('shift_jis').decode(arrayBuffer);
+                        } catch(err) {
+                            text = new TextDecoder('utf-8').decode(arrayBuffer);
+                        }
+
                         const oudData = parseOuDia2(text);
 
-                        // 路線名のセット
+                        // 1. 路線名
                         if (oudData.RouteName) {
                             appData.name = oudData.RouteName;
                         }
 
-                        // 駅データの抽出・反映
+                        // 2. 駅データ
                         appData.stations = oudData.Eki.map((eObj, idx) => ({
                             name: eObj.Ekimei || `駅${idx + 1}`,
                             code: eObj.Ekikigou || '',
                             stopTypes: ''
                         }));
 
-                        // 種別データの抽出・反映 (無ければデフォルトで灰色 #78909c)
+                        // 3. 種別データ
                         const newTypes = [];
                         oudData.Syubetsu.forEach(sObj => {
-                            const name = sObj.Syubetsumei || '';
-                            const shortName = sObj.Ryakusyou || (name ? name.charAt(0) : '');
-                            let color = '#78909c'; // デフォルト灰色
+                            const name = sObj.Syubetsumei || '普通';
+                            const shortName = sObj.Ryakusyou || (name ? name.charAt(0) : '普');
+                            let color = '#78909c';
 
-                            // 既存種別に同じ名前があればそのカラーを引き継ぐ
                             const existing = appData.types.find(t => t.name === name);
                             if (existing && existing.color) {
                                 color = existing.color;
                             }
 
-                            if (name) {
-                                newTypes.push({ name, shortName, color });
-                            }
+                            newTypes.push({ name, shortName, color });
                         });
+
+                        if (newTypes.length === 0) {
+                            newTypes.push({ name: '普通', shortName: '普', color: '#78909c' });
+                        }
                         appData.types = newTypes;
 
-                        // ダイヤデータ（下り・上り列車）の抽出・反映
+                        // 4. ダイヤデータ
                         const newTrains = [];
+                        const totalStations = appData.stations.length;
 
                         const processRessyaList = (ressyaList, isReversed) => {
                             ressyaList.forEach(rObj => {
                                 const syubetsuIdx = parseInt(rObj.Syubetsu || '0', 10);
                                 const syubetsuObj = oudData.Syubetsu[syubetsuIdx];
-                                const typeName = syubetsuObj ? syubetsuObj.Syubetsumei : (appData.types[0] ? appData.types[0].name : '');
+                                const typeName = syubetsuObj ? (syubetsuObj.Syubetsumei || newTypes[0].name) : newTypes[0].name;
                                 const trainName = rObj.Ressyabangou || rObj.Ressyamei || '';
 
                                 const jikanStr = rObj.EkiJikan || '';
                                 const jikanArray = jikanStr.split(',');
 
                                 const schedule = [];
-                                const totalStations = appData.stations.length;
 
                                 for (let sIdx = 0; sIdx < totalStations; sIdx++) {
                                     let arr = "", dep = "";
                                     let raw = jikanArray[sIdx] || '';
 
-                                    if (raw && raw !== '1' && raw !== '2') { // 1=通過, 2=経由なし等
+                                    if (raw && raw !== '1' && raw !== '2') {
                                         if (raw.includes('/')) {
                                             const parts = raw.split('/');
                                             arr = formatOudTime(parts[0]);
@@ -1188,32 +1250,31 @@
                             });
                         };
 
-                        // 下り（標準順序）
                         processRessyaList(oudData.Kudari, false);
-                        // 上り（逆順順序）
                         processRessyaList(oudData.Nobori, true);
 
                         appData.trains = newTrains;
 
-                        // データベースへ直接一括書き込み・即時共有
-                        saveStorage();
-                        alert('.oud2 ファイルからの読み込みとデータベース更新が正常に完了しました！');
+                        // 読み込み完了後に「未反映」ステータスへ変更
+                        markUnsaved();
+                        alert(`.oud2 ファイルの解析が成功しました！\n\n・路線名: ${appData.name}\n・駅数: ${appData.stations.length}駅\n・種別数: ${appData.types.length}種\n・全列車数: ${appData.trains.length}本\n\n※まだ全員には共有されていません。画面右上緑色の「全員反映」ボタンを押して適用してください。`);
+                        switchScreen('zaisen');
                     } catch(err) {
                         console.error(err);
-                        alert('.oud2 ファイルの解析に失敗しました。正しいフォーマットかご確認ください。');
+                        alert('ファイル形式の解析に失敗しました。正しい .oud / .oud2 ファイルを選択してください。');
                     }
                 };
                 reader.readAsArrayBuffer(file);
             } else {
-                // JSONファイルインポート処理
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     try {
                         appData = JSON.parse(e.target.result);
-                        saveStorage();
-                        alert('JSON読み込みが完了しました');
+                        markUnsaved();
+                        alert('JSONファイルの読み込みが完了しました！\n右上緑色の「全員反映」ボタンを押すと全員へ反映されます。');
+                        switchScreen('zaisen');
                     } catch(err) { 
-                        alert('サポートされていないファイル形式です。.oud2 または .json ファイルを選択してください'); 
+                        alert('サポートされていないファイル形式です。.oud / .oud2 または .json ファイルを選択してください'); 
                     }
                 };
                 reader.readAsText(file);
