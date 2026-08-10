@@ -373,7 +373,8 @@
         <div class="setting-card">
             <h3>データ操作</h3>
             <button class="action-btn" onclick="exportJSON()">JSON保存</button>
-            <input type="file" id="import-file-setting" accept=".json,*" onchange="importAnyFile(event)" style="margin-left: 10px;">
+            <span style="font-size:0.85rem; font-weight:bold; margin-left:15px;">インポート: </span>
+            <input type="file" id="import-file-setting" accept=".json,.oud,.oud2,*" onchange="importAnyFile(event)" style="margin-left: 5px;">
             <button class="reset-btn" style="float: right;" onclick="openResetModal()">リセット</button>
         </div>
 
@@ -588,9 +589,9 @@
                     <span style="font-weight:bold; width: 55px;">種別 ${idx + 1}:</span>
                     <input type="text" value="${tp.name || ''}" id="type-name-${idx}" placeholder="種別名 (例: ホリデー快速)" style="flex: 2; min-width: 120px;" oninput="updateTypePreview(${idx})">
                     <input type="text" value="${tp.shortName || ''}" id="type-short-${idx}" placeholder="表示(例: ホ快)" style="width: 70px;" oninput="updateTypePreview(${idx})">
-                    <input type="color" value="${tp.color || '#1e88e5'}" id="type-color-${idx}" onchange="updateTypePreview(${idx})">
-                    <input type="text" value="${tp.color || '#1e88e5'}" id="type-hex-${idx}" style="width: 75px;" placeholder="#1e88e5" oninput="syncColorPickerFromHex(${idx})">
-                    <span class="type-preview-badge" id="type-preview-${idx}" style="background-color: ${tp.color || '#1e88e5'};">${dispText}</span>
+                    <input type="color" value="${tp.color || '#78909c'}" id="type-color-${idx}" onchange="updateTypePreview(${idx})">
+                    <input type="text" value="${tp.color || '#78909c'}" id="type-hex-${idx}" style="width: 75px;" placeholder="#78909c" oninput="syncColorPickerFromHex(${idx})">
+                    <span class="type-preview-badge" id="type-preview-${idx}" style="background-color: ${tp.color || '#78909c'};">${dispText}</span>
                     <button onclick="removeTypeRow(${idx})" style="background:#e74c3c; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">削除</button>
                 `;
                 container.appendChild(row);
@@ -633,7 +634,7 @@
 
         function addTypeRow() {
             syncTypeInputsToMemory();
-            appData.types.push({ name: "", shortName: "", color: "#1e88e5" });
+            appData.types.push({ name: "", shortName: "", color: "#78909c" });
             renderTypeForm();
         }
 
@@ -660,7 +661,7 @@
             const trainPositions = getCalculatedTrainPositions(currentSec);
 
             if (!appData.stations || appData.stations.length === 0) {
-                wrapper.innerHTML = '<p style="text-align:center; color:#888; padding:20px;">駅が登録されていません。<br>「路線設定」画面から駅を追加してください。</p>';
+                wrapper.innerHTML = '<p style="text-align:center; color:#888; padding:20px;">駅が登録されていません。<br>「路線設定」画面から駅を追加または .oud2 ファイルをインポートしてください。</p>';
                 return;
             }
 
@@ -942,7 +943,7 @@
             const container = document.getElementById('station-inputs');
             container.innerHTML = '';
             if (appData.stations.length === 0) {
-                container.innerHTML = '<p style="color:#888;">駅が登録されていません。「＋ 駅追加」で追加してください。</p>';
+                container.innerHTML = '<p style="color:#888;">駅が登録されていません。「＋ 駅追加」または .oud2 ファイルのインポートで追加してください。</p>';
                 return;
             }
             appData.stations.forEach((st, idx) => {
@@ -1023,18 +1024,195 @@
             dl.click();
         }
 
+        /* --- 【OuDia2 (.oud2) 解析 & インポート】 --- */
+        function parseOuDia2(text) {
+            const lines = text.split(/\r?\n/);
+            const root = { FileType: '', Eki: [], Syubetsu: [], Kudari: [], Nobori: [], RouteName: '' };
+            let currentSection = '';
+            let currentObj = null;
+
+            for (let line of lines) {
+                line = line.trim();
+                if (!line) continue;
+
+                if (line.startsWith('FileType=')) {
+                    root.FileType = line.split('=')[1];
+                    continue;
+                }
+                if (line.startsWith('DispRessyaJikanTyuuiRasen.Rosenmei=')) {
+                    root.RouteName = line.split('=')[1] || '';
+                    continue;
+                }
+
+                if (line.endsWith('.')) {
+                    const name = line.slice(0, -1);
+                    if (['Eki', 'Ressyasyubetsu', 'Ressya'].includes(name)) {
+                        currentSection = name;
+                        currentObj = {};
+                    }
+                    continue;
+                }
+
+                if (line === '.') {
+                    if (currentObj) {
+                        if (currentSection === 'Eki') root.Eki.push(currentObj);
+                        else if (currentSection === 'Ressyasyubetsu') root.Syubetsu.push(currentObj);
+                        else if (currentSection === 'Ressya') {
+                            if (currentObj.Houkou === 'Kudari') root.Kudari.push(currentObj);
+                            else root.Nobori.push(currentObj);
+                        }
+                        currentObj = null;
+                    }
+                    continue;
+                }
+
+                const eqIdx = line.indexOf('=');
+                if (eqIdx !== -1 && currentObj) {
+                    const k = line.substring(0, eqIdx);
+                    const v = line.substring(eqIdx + 1);
+                    currentObj[k] = v;
+                }
+            }
+
+            return root;
+        }
+
+        // 時間文字列（例: 805 または 80512）を HH:MM:SS / HH:MM 形式にフォーマット
+        function formatOudTime(tStr) {
+            if (!tStr) return "";
+            let s = tStr.padStart(6, '0');
+            let h = s.substring(0, 2);
+            let m = s.substring(2, 4);
+            let sec = s.substring(4, 6);
+            return `${h}:${m}:${sec}`;
+        }
+
         function importAnyFile(event) {
             const file = event.target.files[0];
             if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    appData = JSON.parse(e.target.result);
-                    saveStorage();
-                    alert('読み込み完了');
-                } catch(err) { alert('JSON形式のファイルを選択してください'); }
-            };
-            reader.readAsText(file);
+
+            const filename = file.name.toLowerCase();
+
+            if (filename.endsWith('.oud') || filename.endsWith('.oud2')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const arrayBuffer = e.target.result;
+                        const text = new TextDecoder('shift_jis').decode(arrayBuffer);
+                        const oudData = parseOuDia2(text);
+
+                        // 路線名のセット
+                        if (oudData.RouteName) {
+                            appData.name = oudData.RouteName;
+                        }
+
+                        // 駅データの抽出・反映
+                        appData.stations = oudData.Eki.map((eObj, idx) => ({
+                            name: eObj.Ekimei || `駅${idx + 1}`,
+                            code: eObj.Ekikigou || '',
+                            stopTypes: ''
+                        }));
+
+                        // 種別データの抽出・反映 (無ければデフォルトで灰色 #78909c)
+                        const newTypes = [];
+                        oudData.Syubetsu.forEach(sObj => {
+                            const name = sObj.Syubetsumei || '';
+                            const shortName = sObj.Ryakusyou || (name ? name.charAt(0) : '');
+                            let color = '#78909c'; // デフォルト灰色
+
+                            // 既存種別に同じ名前があればそのカラーを引き継ぐ
+                            const existing = appData.types.find(t => t.name === name);
+                            if (existing && existing.color) {
+                                color = existing.color;
+                            }
+
+                            if (name) {
+                                newTypes.push({ name, shortName, color });
+                            }
+                        });
+                        appData.types = newTypes;
+
+                        // ダイヤデータ（下り・上り列車）の抽出・反映
+                        const newTrains = [];
+
+                        const processRessyaList = (ressyaList, isReversed) => {
+                            ressyaList.forEach(rObj => {
+                                const syubetsuIdx = parseInt(rObj.Syubetsu || '0', 10);
+                                const syubetsuObj = oudData.Syubetsu[syubetsuIdx];
+                                const typeName = syubetsuObj ? syubetsuObj.Syubetsumei : (appData.types[0] ? appData.types[0].name : '');
+                                const trainName = rObj.Ressyabangou || rObj.Ressyamei || '';
+
+                                const jikanStr = rObj.EkiJikan || '';
+                                const jikanArray = jikanStr.split(',');
+
+                                const schedule = [];
+                                const totalStations = appData.stations.length;
+
+                                for (let sIdx = 0; sIdx < totalStations; sIdx++) {
+                                    let arr = "", dep = "";
+                                    let raw = jikanArray[sIdx] || '';
+
+                                    if (raw && raw !== '1' && raw !== '2') { // 1=通過, 2=経由なし等
+                                        if (raw.includes('/')) {
+                                            const parts = raw.split('/');
+                                            arr = formatOudTime(parts[0]);
+                                            dep = formatOudTime(parts[1]);
+                                        } else {
+                                            dep = formatOudTime(raw);
+                                        }
+                                    }
+
+                                    if (arr || dep) {
+                                        schedule.push({
+                                            stationIndex: isReversed ? (totalStations - 1 - sIdx) : sIdx,
+                                            arr: arr,
+                                            dep: dep,
+                                            type: "stop"
+                                        });
+                                    }
+                                }
+
+                                if (schedule.length > 0) {
+                                    newTrains.push({
+                                        name: trainName,
+                                        type: typeName,
+                                        isReversed: isReversed,
+                                        schedule: schedule
+                                    });
+                                }
+                            });
+                        };
+
+                        // 下り（標準順序）
+                        processRessyaList(oudData.Kudari, false);
+                        // 上り（逆順順序）
+                        processRessyaList(oudData.Nobori, true);
+
+                        appData.trains = newTrains;
+
+                        // データベースへ直接一括書き込み・即時共有
+                        saveStorage();
+                        alert('.oud2 ファイルからの読み込みとデータベース更新が正常に完了しました！');
+                    } catch(err) {
+                        console.error(err);
+                        alert('.oud2 ファイルの解析に失敗しました。正しいフォーマットかご確認ください。');
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            } else {
+                // JSONファイルインポート処理
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        appData = JSON.parse(e.target.result);
+                        saveStorage();
+                        alert('JSON読み込みが完了しました');
+                    } catch(err) { 
+                        alert('サポートされていないファイル形式です。.oud2 または .json ファイルを選択してください'); 
+                    }
+                };
+                reader.readAsText(file);
+            }
         }
     </script>
 </body>
