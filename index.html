@@ -161,12 +161,13 @@
             flex-wrap: wrap;
             gap: 3px;
             justify-content: flex-end;
-            max-width: 110px;
+            max-width: 130px;
             margin-bottom: 4px;
         }
         .stop-type-icon {
-            width: 18px;
+            min-width: 18px;
             height: 18px;
+            padding: 0 3px;
             border-radius: 3px;
             color: white;
             font-size: 0.65rem;
@@ -175,6 +176,7 @@
             align-items: center;
             justify-content: center;
             box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            box-sizing: border-box;
         }
 
         /* 中央の駅ドット */
@@ -227,7 +229,7 @@
             border-radius: 8px;
             margin-bottom: 15px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            max-width: 600px;
+            max-width: 650px;
             margin-left: auto;
             margin-right: auto;
         }
@@ -268,14 +270,18 @@
             font-weight: bold;
         }
         .type-preview-badge {
-            display: inline-block;
-            padding: 4px 8px;
-            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2px 6px;
+            border-radius: 3px;
             color: white;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             font-weight: bold;
-            min-width: 50px;
+            min-width: 24px;
+            height: 22px;
             text-align: center;
+            box-sizing: border-box;
         }
 
         /* モーダル表示用スタイル */
@@ -354,8 +360,8 @@
     <!-- 【2. 種別設定画面】 -->
     <div id="screen-type" class="screen">
         <div class="setting-card">
-            <h3>列車種別・カラー設定</h3>
-            <p style="font-size: 0.85rem; color: #666;">種別名と表示カラーを設定します。</p>
+            <h3>列車種別・カラー・表示文字設定</h3>
+            <p style="font-size: 0.85rem; color: #666;">種別名、路線図上の「表示文字（略称）」、カラーを設定します。</p>
             <div id="type-inputs"></div>
             <button class="action-btn" onclick="addTypeRow()">＋ 種別追加</button>
             <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveTypeSettings()">種別設定を保存</button>
@@ -374,7 +380,7 @@
         <div class="setting-card">
             <h3>路線・駅設定</h3>
             <input type="text" id="route-title" placeholder="路線名 (例:〇〇線)" style="width: 90%; margin-bottom: 12px;">
-            <p style="font-size: 0.8rem; color: #666; margin-top:-5px;">※停車種別はカンマ「,」区切りで複数指定できます（例: 普通, 急行, 特急）</p>
+            <p style="font-size: 0.8rem; color: #666; margin-top:-5px;">※停車種別はカンマ「,」区切りで複数指定できます（例: 普通, 急行, ホリデー快速）</p>
             <div id="station-inputs"></div>
             <button class="action-btn" onclick="addStationRow()">＋ 駅追加</button>
             <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveRouteSettings()">保存</button>
@@ -469,11 +475,9 @@
                 if (!appData.trains) appData.trains = [];
                 if (!appData.general) appData.general = { trackDir: "up-left", timeUnit: "sec" };
             } else {
-                // データベースが null の場合、自動的に初期構造を送信して書き込む
                 saveStorage();
             }
 
-            // 現在開いている画面を再描画
             const activeScreen = document.querySelector('.screen.active').id.replace('screen-', '');
             if (activeScreen === 'zaisen') renderZaisen();
             if (activeScreen === 'type') renderTypeForm();
@@ -489,7 +493,6 @@
             document.getElementById('sync-status').style.background = "#e74c3c";
         });
 
-        // データの送信保存（Firebaseに更新要求）
         function saveStorage() {
             document.getElementById('sync-status').innerText = "送信中...";
             document.getElementById('sync-status').style.background = "#f39c12";
@@ -578,12 +581,16 @@
             appData.types.forEach((tp, idx) => {
                 const row = document.createElement('div');
                 row.className = 'row-group';
+                
+                const dispText = tp.shortName || (tp.name ? tp.name.charAt(0) : '普');
+
                 row.innerHTML = `
-                    <span style="font-weight:bold; width: 60px;">種別 ${idx + 1}:</span>
-                    <input type="text" value="${tp.name || ''}" id="type-name-${idx}" placeholder="種別名 (例: 急行)" style="flex: 2;" oninput="updateTypePreview(${idx})">
-                    <input type="color" value="${tp.color || '#78909c'}" id="type-color-${idx}" onchange="updateTypePreview(${idx})">
-                    <input type="text" value="${tp.color || '#78909c'}" id="type-hex-${idx}" style="width: 80px;" placeholder="#1e88e5" oninput="syncColorPickerFromHex(${idx})">
-                    <span class="type-preview-badge" id="type-preview-${idx}" style="background-color: ${tp.color || '#78909c'};">${tp.name || 'プレビュー'}</span>
+                    <span style="font-weight:bold; width: 55px;">種別 ${idx + 1}:</span>
+                    <input type="text" value="${tp.name || ''}" id="type-name-${idx}" placeholder="種別名 (例: ホリデー快速)" style="flex: 2; min-width: 120px;" oninput="updateTypePreview(${idx})">
+                    <input type="text" value="${tp.shortName || ''}" id="type-short-${idx}" placeholder="表示(例: ホ快)" style="width: 70px;" oninput="updateTypePreview(${idx})">
+                    <input type="color" value="${tp.color || '#1e88e5'}" id="type-color-${idx}" onchange="updateTypePreview(${idx})">
+                    <input type="text" value="${tp.color || '#1e88e5'}" id="type-hex-${idx}" style="width: 75px;" placeholder="#1e88e5" oninput="syncColorPickerFromHex(${idx})">
+                    <span class="type-preview-badge" id="type-preview-${idx}" style="background-color: ${tp.color || '#1e88e5'};">${dispText}</span>
                     <button onclick="removeTypeRow(${idx})" style="background:#e74c3c; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">削除</button>
                 `;
                 container.appendChild(row);
@@ -592,11 +599,13 @@
 
         function updateTypePreview(idx) {
             const name = document.getElementById(`type-name-${idx}`).value;
+            const short = document.getElementById(`type-short-${idx}`).value;
             const color = document.getElementById(`type-color-${idx}`).value;
             document.getElementById(`type-hex-${idx}`).value = color;
+            
             const preview = document.getElementById(`type-preview-${idx}`);
             if (preview) {
-                preview.innerText = name || 'プレビュー';
+                preview.innerText = short || (name ? name.charAt(0) : '普');
                 preview.style.backgroundColor = color;
             }
         }
@@ -612,9 +621,11 @@
         function syncTypeInputsToMemory() {
             appData.types = appData.types.map((tp, idx) => {
                 const nameEl = document.getElementById(`type-name-${idx}`);
+                const shortEl = document.getElementById(`type-short-${idx}`);
                 const colorEl = document.getElementById(`type-hex-${idx}`);
                 return {
                     name: nameEl ? nameEl.value : tp.name,
+                    shortName: shortEl ? shortEl.value : (tp.shortName || ""),
                     color: colorEl ? colorEl.value : tp.color
                 };
             });
@@ -622,7 +633,7 @@
 
         function addTypeRow() {
             syncTypeInputsToMemory();
-            appData.types.push({ name: "", color: "#1e88e5" });
+            appData.types.push({ name: "", shortName: "", color: "#1e88e5" });
             renderTypeForm();
         }
 
@@ -664,9 +675,10 @@
                     const typeList = st.stopTypes.split(/[,、]/).map(s => s.trim()).filter(s => s);
                     let iconsHtml = '';
                     typeList.forEach(tName => {
-                        const color = getTrainColor(tName);
-                        const initialChar = tName.charAt(0) || '';
-                        iconsHtml += `<div class="stop-type-icon" style="background-color: ${color};" title="${tName}">${initialChar}</div>`;
+                        const typeObj = appData.types.find(tp => tp.name === tName);
+                        const color = typeObj ? typeObj.color : '#78909c';
+                        const dispText = (typeObj && typeObj.shortName) ? typeObj.shortName : (tName.charAt(0) || '');
+                        iconsHtml += `<div class="stop-type-icon" style="background-color: ${color};" title="${tName}">${dispText}</div>`;
                     });
                     if (iconsHtml) {
                         stopTypeHtml = `<div class="stop-types-wrapper">${iconsHtml}</div>`;
