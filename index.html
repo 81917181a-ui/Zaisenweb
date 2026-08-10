@@ -1071,6 +1071,20 @@
         }
 
         /* --- 【OuDia / OuDia2 (.oud / .oud2) 解析機能】 --- */
+        
+        // OuDia/OuDia2のカラーコード (00BBGGRR などの16進数) を #RRGGBB に変換するヘルパー関数
+        function parseOudColor(colorStr) {
+            if (!colorStr) return '#78909c';
+            let hex = colorStr.replace(/[^0-9A-Fa-f]/g, '');
+            if (hex.length < 6) return '#78909c';
+            // 下位6桁を取得 (BBGGRR)
+            let bbggrr = hex.slice(-6);
+            let bb = bbggrr.substring(0, 2);
+            let gg = bbggrr.substring(2, 4);
+            let rr = bbggrr.substring(4, 6);
+            return `#${rr}${gg}${bb}`;
+        }
+
         function parseOudFormat(text) {
             const lines = text.split(/\r?\n/);
             const root = { FileType: '', Eki: [], Syubetsu: [], Kudari: [], Nobori: [], RouteName: '' };
@@ -1133,12 +1147,16 @@
 
         function formatOudTime(tStr) {
             if (!tStr) return "";
-            let s = tStr.padStart(tStr.length <= 4 ? 4 : 6, '0');
+            // アスタリスク等の属性文字を除去
+            let cleanStr = tStr.replace(/[^0-9]/g, '');
+            if (!cleanStr) return "";
+
+            let s = cleanStr.padStart(cleanStr.length <= 4 ? 4 : 6, '0');
             let h = "", m = "", sec = "00";
             if (s.length === 4) {
                 h = s.substring(0, 2);
                 m = s.substring(2, 4);
-            } else if (s.length === 6) {
+            } else if (s.length >= 6) {
                 h = s.substring(0, 2);
                 m = s.substring(2, 4);
                 sec = s.substring(4, 6);
@@ -1148,7 +1166,7 @@
             return `${h}:${m}:${sec}`;
         }
 
-        // JSONかOuDiaか、ファイル構造から完全自動判定して読み込む関数
+        // JSONかOuDia/OuDia2か、ファイル構造から完全自動判定して読み込む関数
         function importAnyFile(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -1159,7 +1177,7 @@
                 const arrayBuffer = e.target.result;
                 let text = "";
 
-                // Shift_JIS (OuDiaの標準) で読み取り、失敗した場合は UTF-8 にフォールバック
+                // Shift_JIS (OuDia/OuDia2標準) で読み取り、失敗した場合は UTF-8 にフォールバック
                 try {
                     text = new TextDecoder('shift_jis').decode(arrayBuffer);
                 } catch(err) {
@@ -1188,7 +1206,7 @@
                     const oudData = parseOudFormat(text);
 
                     if (!oudData.FileType && oudData.Eki.length === 0 && oudData.Kudari.length === 0) {
-                        throw new Error('Invalid OuDia format');
+                        throw new Error('Invalid OuDia / OuDia2 format');
                     }
 
                     // 路線名
@@ -1203,17 +1221,15 @@
                         stopTypes: ''
                     }));
 
-                    // 種別データ
+                    // 種別データ（OuDia2の線色・文字色に対応）
                     const newTypes = [];
                     oudData.Syubetsu.forEach(sObj => {
                         const name = sObj.Syubetsumei || '普通';
                         const shortName = sObj.Ryakusyou || (name ? name.charAt(0) : '普');
-                        let color = '#78909c';
-
-                        const existing = appData.types.find(t => t.name === name);
-                        if (existing && existing.color) {
-                            color = existing.color;
-                        }
+                        
+                        // .oud2 の DiagramSenColor または JikokuhyouMojiColor からカラーを変換
+                        let rawColor = sObj.DiagramSenColor || sObj.JikokuhyouMojiColor;
+                        let color = parseOudColor(rawColor);
 
                         newTypes.push({ name, shortName, color });
                     });
@@ -1223,7 +1239,7 @@
                     }
                     appData.types = newTypes;
 
-                    // ダイヤデータ
+                    // ダイヤデータ (.oud / .oud2 共通処理)
                     const newTrains = [];
                     const totalStations = appData.stations.length;
 
@@ -1242,6 +1258,11 @@
                             for (let sIdx = 0; sIdx < totalStations; sIdx++) {
                                 let arr = "", dep = "";
                                 let raw = jikanArray[sIdx] || '';
+
+                                // OuDia / OuDia2 の番線情報（セミコロン等）を分離して時刻部分を取得
+                                if (raw.includes(';')) {
+                                    raw = raw.split(';')[0];
+                                }
 
                                 if (raw && raw !== '1' && raw !== '2') {
                                     if (raw.includes('/')) {
@@ -1280,11 +1301,11 @@
                     appData.trains = newTrains;
 
                     markUnsaved();
-                    alert(`ダイヤファイルの解析が成功しました！\n\n・路線名: ${appData.name}\n・駅数: ${appData.stations.length}駅\n・種別数: ${appData.types.length}種\n・全列車数: ${appData.trains.length}本\n\n※「全員反映」ボタンを押すと画面へ反映されます。`);
+                    alert(`OuDia2 (.oud2) ダイヤファイルの解析が成功しました！\n\n・路線名: ${appData.name}\n・駅数: ${appData.stations.length}駅\n・種別数: ${appData.types.length}種\n・全列車数: ${appData.trains.length}本\n\n※「全員反映」ボタンを押すと画面へ反映されます。`);
                     switchScreen('zaisen');
                 } catch(err) {
                     console.error(err);
-                    alert('ファイルの解析に失敗しました。正しい JSON または OuDia (.oud / .oud2) ファイルを選択してください。');
+                    alert('ファイルの解析に失敗しました。正しい JSON または OuDia / OuDia2 (.oud / .oud2) ファイルを選択してください。');
                 }
 
                 event.target.value = ''; // ファイル選択をクリア
