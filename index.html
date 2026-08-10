@@ -371,14 +371,6 @@
     <!-- 【3. 路線設定画面】 -->
     <div id="screen-setting" class="screen">
         <div class="setting-card">
-            <h3>データ操作</h3>
-            <button class="action-btn" onclick="exportJSON()">JSON保存</button>
-            <span style="font-size:0.85rem; font-weight:bold; margin-left:15px;">インポート: </span>
-            <input type="file" id="import-file-setting" accept=".json,.oud,.oud2,*" onchange="importAnyFile(event)" style="margin-left: 5px;">
-            <button class="reset-btn" style="float: right;" onclick="openResetModal()">リセット</button>
-        </div>
-
-        <div class="setting-card">
             <h3>路線・駅設定</h3>
             <input type="text" id="route-title" placeholder="路線名 (例:〇〇線)" style="width: 90%; margin-bottom: 12px;">
             <p style="font-size: 0.8rem; color: #666; margin-top:-5px;">※停車種別はカンマ「,」区切りで複数指定できます（例: 普通, 急行, ホリデー快速）</p>
@@ -400,6 +392,19 @@
 
     <!-- 【5. 一般設定画面】 -->
     <div id="screen-general" class="screen">
+        <!-- 移動したデータ操作エリア -->
+        <div class="setting-card">
+            <h3>データ操作</h3>
+            <div class="row-group" style="justify-content: space-between;">
+                <div>
+                    <button class="action-btn" onclick="exportJSON()">JSON保存</button>
+                    <span style="font-size:0.85rem; font-weight:bold; margin-left:15px;">インポート (.oud2 / .oud / JSON): </span>
+                    <input type="file" id="import-file-setting" accept=".json,.oud,.oud2,*" onchange="importAnyFile(event)" style="margin-left: 5px;">
+                </div>
+                <button class="reset-btn" onclick="openResetModal()">リセット</button>
+            </div>
+        </div>
+
         <div class="setting-card">
             <h3>一般設定</h3>
             <p style="font-size: 0.85rem; color: #666;">走行位置の左右配置および時刻入力の単位を設定します。</p>
@@ -661,7 +666,7 @@
             const trainPositions = getCalculatedTrainPositions(currentSec);
 
             if (!appData.stations || appData.stations.length === 0) {
-                wrapper.innerHTML = '<p style="text-align:center; color:#888; padding:20px;">駅が登録されていません。<br>「路線設定」画面から駅を追加または .oud2 ファイルをインポートしてください。</p>';
+                wrapper.innerHTML = '<p style="text-align:center; color:#888; padding:20px;">駅が登録されていません。<br>「一般設定」で .oud2 / JSON ファイルをインポートするか、「路線設定」から駅を追加してください。</p>';
                 return;
             }
 
@@ -943,7 +948,7 @@
             const container = document.getElementById('station-inputs');
             container.innerHTML = '';
             if (appData.stations.length === 0) {
-                container.innerHTML = '<p style="color:#888;">駅が登録されていません。「＋ 駅追加」または .oud2 ファイルのインポートで追加してください。</p>';
+                container.innerHTML = '<p style="color:#888;">駅が登録されていません。「＋ 駅追加」または「一般設定」からのインポートで追加してください。</p>';
                 return;
             }
             appData.stations.forEach((st, idx) => {
