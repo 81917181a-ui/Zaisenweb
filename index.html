@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>列車管理システム</title>
+    <!-- Firebase SDK (Compat版) の読み込み -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -28,6 +31,13 @@
             display: flex;
             align-items: center;
             gap: 12px;
+        }
+        #sync-status {
+            font-size: 0.75rem;
+            background: #f39c12;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 10px;
         }
         #live-clock {
             font-size: 0.95rem;
@@ -316,6 +326,7 @@
     <header>
         <div class="header-title">列車管理システム</div>
         <div class="header-right">
+            <div id="sync-status">接続中...</div>
             <div id="live-clock">--:--:--</div>
             <div class="tab-buttons">
                 <button id="btn-zaisen" class="active" onclick="switchScreen('zaisen')">走行位置</button>
@@ -421,6 +432,22 @@
     </div>
 
     <script>
+        // Firebaseの設定
+        const firebaseConfig = {
+            apiKey: "AIzaSyAtC9JwmDhKQ5U75BgtmEmRlxxvyqOxxdU",
+            authDomain: "train-73ddb.firebaseapp.com",
+            databaseURL: "https://train-73ddb-default-rtdb.firebaseio.com",
+            projectId: "train-73ddb",
+            storageBucket: "train-73ddb.firebasestorage.app",
+            messagingSenderId: "95255440333",
+            appId: "1:95255440333:web:af0ea55d2ee53773e23284",
+            measurementId: "G-81H5TNGR7W"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        const appDataRef = database.ref('railway_app_data');
+
         let appData = {
             name: "",
             types: [],
@@ -431,6 +458,43 @@
                 timeUnit: "sec"
             }
         };
+
+        // Firebaseリアルタイム同期イベント受信
+        appDataRef.on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                appData = data;
+                if (!appData.types) appData.types = [];
+                if (!appData.stations) appData.stations = [];
+                if (!appData.trains) appData.trains = [];
+                if (!appData.general) appData.general = { trackDir: "up-left", timeUnit: "sec" };
+            } else {
+                // データベースが null の場合、自動的に初期構造を送信して書き込む
+                saveStorage();
+            }
+
+            // 現在開いている画面を再描画
+            const activeScreen = document.querySelector('.screen.active').id.replace('screen-', '');
+            if (activeScreen === 'zaisen') renderZaisen();
+            if (activeScreen === 'type') renderTypeForm();
+            if (activeScreen === 'setting') renderSettingForm();
+            if (activeScreen === 'dia') renderDiaForm();
+            if (activeScreen === 'general') renderGeneralForm();
+
+            document.getElementById('sync-status').innerText = "リアルタイム同期中";
+            document.getElementById('sync-status').style.background = "#27ae60";
+        }, (error) => {
+            console.error("Firebase Error: ", error);
+            document.getElementById('sync-status').innerText = "通信エラー";
+            document.getElementById('sync-status').style.background = "#e74c3c";
+        });
+
+        // データの送信保存（Firebaseに更新要求）
+        function saveStorage() {
+            document.getElementById('sync-status').innerText = "送信中...";
+            document.getElementById('sync-status').style.background = "#f39c12";
+            appDataRef.set(appData);
+        }
 
         setInterval(() => {
             updateClock();
@@ -516,7 +580,7 @@
                 row.className = 'row-group';
                 row.innerHTML = `
                     <span style="font-weight:bold; width: 60px;">種別 ${idx + 1}:</span>
-                    <input type="text" value="${tp.name}" id="type-name-${idx}" placeholder="種別名 (例: 急行)" style="flex: 2;" oninput="updateTypePreview(${idx})">
+                    <input type="text" value="${tp.name || ''}" id="type-name-${idx}" placeholder="種別名 (例: 急行)" style="flex: 2;" oninput="updateTypePreview(${idx})">
                     <input type="color" value="${tp.color || '#78909c'}" id="type-color-${idx}" onchange="updateTypePreview(${idx})">
                     <input type="text" value="${tp.color || '#78909c'}" id="type-hex-${idx}" style="width: 80px;" placeholder="#1e88e5" oninput="syncColorPickerFromHex(${idx})">
                     <span class="type-preview-badge" id="type-preview-${idx}" style="background-color: ${tp.color || '#78909c'};">${tp.name || 'プレビュー'}</span>
@@ -577,7 +641,6 @@
 
         /* --- 【走行位置画面】 --- */
         function renderZaisen() {
-            loadStorage();
             document.getElementById('display-route-title').innerText = appData.name || "（路線名未設定）";
             const wrapper = document.getElementById('vertical-route-view');
             wrapper.innerHTML = '<div class="vertical-line"></div>';
@@ -679,13 +742,11 @@
                 const sched = t.schedule;
                 if (!sched || sched.length < 2) return;
 
-                // ダイヤ中の時刻が設定されている有効な駅データのみ抽出
                 const validSched = sched.filter(s => s.arr || s.dep);
                 if (validSched.length < 2) return;
 
                 const firstIdx = validSched[0].stationIndex;
                 const lastIdx = validSched[validSched.length - 1].stationIndex;
-                // インデックスが増加する方向が下り（down）、減少する方向が上り（up）
                 const direction = firstIdx <= lastIdx ? 'down' : 'up';
 
                 for (let i = 0; i < validSched.length; i++) {
@@ -693,7 +754,6 @@
                     const arr = timeToSec(st.arr);
                     const dep = timeToSec(st.dep);
 
-                    // 停車中判定（着時刻と発時刻のいずれかのみの場合もカバー）
                     const startAtSt = (arr !== -1) ? arr : dep;
                     const endAtSt = (dep !== -1) ? dep : arr;
 
@@ -707,7 +767,6 @@
                         });
                     }
 
-                    // 駅間走行判定
                     if (i < validSched.length - 1) {
                         const nextSt = validSched[i + 1];
                         const nextArr = timeToSec(nextSt.arr);
@@ -719,8 +778,6 @@
                             let ratio = totalSec > 0 ? (elapsed / totalSec) : 0.5;
 
                             let minIdx = Math.min(st.stationIndex, nextSt.stationIndex);
-                            
-                            // 上り（下から上へ進む）場合、画面表示上のY軸位置を上向き（1 -> 0）に変換
                             let progress = (direction === 'down') ? ratio : (1 - ratio);
 
                             results.push({
@@ -938,24 +995,12 @@
                 }
             } else if (type === 'all') {
                 if (confirm('本当にすべての情報を全消去しますか？')) {
-                    localStorage.removeItem('railwayAppData_v3');
                     appData = { name: "", types: [], stations: [], trains: [], general: { trackDir: "up-left", timeUnit: "sec" } };
+                    saveStorage();
                     alert('全データをクリアしました');
                 }
             }
             closeResetModal();
-            renderSettingForm();
-            renderZaisen();
-        }
-
-        /* --- ストレージ保存・読み込み --- */
-        function saveStorage() { localStorage.setItem('railwayAppData_v3', JSON.stringify(appData)); }
-        function loadStorage() {
-            const saved = localStorage.getItem('railwayAppData_v3');
-            if (saved) {
-                appData = JSON.parse(saved);
-                if (!appData.general) appData.general = { trackDir: "up-left", timeUnit: "sec" };
-            }
         }
 
         function exportJSON() {
@@ -965,6 +1010,7 @@
             dl.setAttribute("download", "railway_data.json");
             dl.click();
         }
+
         function importAnyFile(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -974,14 +1020,10 @@
                     appData = JSON.parse(e.target.result);
                     saveStorage();
                     alert('読み込み完了');
-                    location.reload();
                 } catch(err) { alert('JSON形式のファイルを選択してください'); }
             };
             reader.readAsText(file);
         }
-
-        loadStorage();
-        renderZaisen();
     </script>
 </body>
 </html>
