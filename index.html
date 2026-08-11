@@ -321,10 +321,12 @@
             background: white;
             padding: 20px;
             border-radius: 8px;
-            max-width: 360px;
+            max-width: 420px;
             width: 90%;
             box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             text-align: center;
+            max-height: 80vh;
+            overflow-y: auto;
         }
         .modal-btn-list {
             display: flex;
@@ -344,6 +346,21 @@
         .btn-reset-st { background: #e67e22; }
         .btn-reset-all { background: #c0392b; }
         .btn-cancel { background: #95a5a6; }
+
+        /* 追加：エラーカード表示スタイル */
+        .error-card {
+            background-color: #fff0f0;
+            border: 1px solid #ff4d4f;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 8px;
+            text-align: left;
+            font-size: 0.8rem;
+        }
+        .error-card .err-code {
+            font-weight: bold;
+            color: #cf1322;
+        }
     </style>
 </head>
 <body>
@@ -462,6 +479,18 @@
         </div>
     </div>
 
+    <!-- 追加：エラー通知モーダル -->
+    <div id="error-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 style="margin-top:0; color: #c0392b;">⚠️ 時刻データのエラー検出</h3>
+            <p style="font-size: 0.8rem; color: #666; margin-bottom: 10px;">到着時刻が出発時刻より遅くなっている不整合データを検出・自動補正しました。</p>
+            <div id="error-modal-list"></div>
+            <div class="modal-btn-list">
+                <button class="modal-btn btn-cancel" onclick="closeErrorModal()">閉じる</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Firebaseの設定
         const firebaseConfig = {
@@ -492,7 +521,7 @@
 
         let isUnsaved = false; // 未反映フラグ
 
-        // 起動時に1回だけFirebaseからデータを読み込み（常時監視しないことで通信量を節約）
+        // 起動時に1回だけFirebaseからデータを読み込み
         appDataRef.once('value').then((snapshot) => {
             const data = snapshot.val();
             if (data) {
@@ -510,7 +539,6 @@
             document.getElementById('sync-status').style.background = "#e74c3c";
         });
 
-        // 状態変更時のステータス更新関数
         function markUnsaved() {
             isUnsaved = true;
             const statusEl = document.getElementById('sync-status');
@@ -525,7 +553,6 @@
             statusEl.classList.remove('unsaved');
         }
 
-        // 手動で「全員反映」ボタンが押されたときのみ通信を実行
         function pushToFirebase() {
             if (confirm("現在の全データを接続している全員の画面へ反映しますか？")) {
                 const statusEl = document.getElementById('sync-status');
@@ -1036,6 +1063,10 @@
             document.getElementById('reset-modal').classList.remove('active');
         }
 
+        function closeErrorModal() {
+            document.getElementById('error-modal').classList.remove('active');
+        }
+
         function executeReset(type) {
             if (type === 'dia') {
                 if (confirm('ダイヤ設定（全列車データ）を消去しますか？')) {
@@ -1069,7 +1100,27 @@
             dl.click();
         }
 
-        /* --- 【完全版 OuDia / OuDia2 (.oud / .oud2) 解析機能】 --- */
+        /* --- 【完全版 OuDia / OuDia2 (.oud / .oud2) 解析および時間検証機能】 --- */
+        
+        // 時刻パース用の内部ユーティリティ (HHMMSS などの秒換算)
+        function parseOudTimeToSec(tStr) {
+            if (!tStr) return null;
+            let s = tStr.padStart(tStr.length <= 4 ? 4 : 6, '0');
+            let h = 0, m = 0, sec = 0;
+            if (s.length === 4) {
+                h = parseInt(s.substring(0, 2), 10);
+                m = parseInt(s.substring(2, 4), 10);
+            } else if (s.length === 6) {
+                h = parseInt(s.substring(0, 2), 10);
+                m = parseInt(s.substring(2, 4), 10);
+                sec = parseInt(s.substring(4, 6), 10);
+            } else {
+                return null;
+            }
+            if (isNaN(h) || isNaN(m) || isNaN(sec)) return null;
+            return h * 3600 + m * 60 + sec;
+        }
+
         function parseOuDia2(text) {
             const lines = text.split(/\r?\n/);
             const root = { FileType: '', Eki: [], Syubetsu: [], Kudari: [], Nobori: [], RouteName: '' };
@@ -1166,6 +1217,7 @@
                         }
 
                         const oudData = parseOuDia2(text);
+                        const errors = []; // エラーログ保持用
 
                         // 1. 路線名
                         if (oudData.RouteName) {
@@ -1199,18 +1251,18 @@
                         }
                         appData.types = newTypes;
 
-                        // 4. ダイヤデータ
+                        // 4. ダイヤデータ（エラー検証ロジックを統合）
                         const newTrains = [];
                         const totalStations = appData.stations.length;
 
-                        const processRessyaList = (ressyaList, isReversed) => {
+                        const processRessyaList = (ressyaList, isReversed, dirName) => {
                             ressyaList.forEach(rObj => {
                                 const syubetsuIdx = parseInt(rObj.Syubetsu || '0', 10);
                                 const syubetsuObj = oudData.Syubetsu[syubetsuIdx];
                                 const typeName = syubetsuObj ? (syubetsuObj.Syubetsumei || newTypes[0].name) : newTypes[0].name;
-                                const trainName = rObj.Ressyabangou || rObj.Ressyamei || '';
+                                const trainName = rObj.Ressyabangou || rObj.Ressyamei || '名称未設定';
 
-                                const jikanStr = rObj.EkiJikan || '';
+                                const jikanStr = rObj.EkiJikan || rObj.EkiJikoku || '';
                                 const jikanArray = jikanStr.split(',');
 
                                 const schedule = [];
@@ -1220,12 +1272,36 @@
                                     let raw = jikanArray[sIdx] || '';
 
                                     if (raw && raw !== '1' && raw !== '2') {
-                                        if (raw.includes('/')) {
-                                            const parts = raw.split('/');
-                                            arr = formatOudTime(parts[0]);
-                                            dep = formatOudTime(parts[1]);
+                                        // トラック情報 (例: "1;173845/1728") からトラックIDを削除
+                                        let cleanRaw = raw.replace(/^\d+;/, '').replace(/\$.*$/, '');
+
+                                        if (cleanRaw.includes('/')) {
+                                            const parts = cleanRaw.split('/');
+                                            let rawArr = parts[0];
+                                            let rawDep = parts[1];
+
+                                            const arrSec = parseOudTimeToSec(rawArr);
+                                            const depSec = parseOudTimeToSec(rawDep);
+
+                                            // 時刻逆転チェック (到着 > 出発)
+                                            if (arrSec !== null && depSec !== null && arrSec > depSec) {
+                                                const stName = appData.stations[isReversed ? (totalStations - 1 - sIdx) : sIdx].name;
+                                                errors.push({
+                                                    errorCode: 'ERR_TIME_REVERSAL',
+                                                    direction: dirName,
+                                                    trainName: trainName,
+                                                    stationName: stName,
+                                                    arrRaw: rawArr,
+                                                    depRaw: rawDep
+                                                });
+                                                // 自動補正：出発時刻を到着時刻と同刻にする
+                                                rawDep = rawArr;
+                                            }
+
+                                            arr = formatOudTime(rawArr);
+                                            dep = formatOudTime(rawDep);
                                         } else {
-                                            dep = formatOudTime(raw);
+                                            dep = formatOudTime(cleanRaw);
                                         }
                                     }
 
@@ -1250,14 +1326,33 @@
                             });
                         };
 
-                        processRessyaList(oudData.Kudari, false);
-                        processRessyaList(oudData.Nobori, true);
+                        processRessyaList(oudData.Kudari, false, '下り');
+                        processRessyaList(oudData.Nobori, true, '上り');
 
                         appData.trains = newTrains;
 
                         // 読み込み完了後に「未反映」ステータスへ変更
                         markUnsaved();
-                        alert(`.oud2 ファイルの解析が成功しました！\n\n・路線名: ${appData.name}\n・駅数: ${appData.stations.length}駅\n・種別数: ${appData.types.length}種\n・全列車数: ${appData.trains.length}本\n\n※まだ全員には共有されていません。画面右上緑色の「全員反映」ボタンを押して適用してください。`);
+
+                        // エラー表示ハンドリング
+                        if (errors.length > 0) {
+                            const errContainer = document.getElementById('error-modal-list');
+                            errContainer.innerHTML = '';
+                            errors.forEach(err => {
+                                const card = document.createElement('div');
+                                card.className = 'error-card';
+                                card.innerHTML = `
+                                    <div class="err-code">[${err.errorCode}] 時刻逆転エラー</div>
+                                    <div><b>該当列車:</b> ${err.direction} ${err.trainName} / <b>駅:</b> ${err.stationName}</div>
+                                    <div><b>修正箇所:</b> 到着 (${err.arrRaw}) > 出発 (${err.depRaw}) $\\rightarrow$ 出発時刻を自動調整しました</div>
+                                `;
+                                errContainer.appendChild(card);
+                            });
+                            document.getElementById('error-modal').classList.add('active');
+                        } else {
+                            alert(`.oud2 ファイルの解析が成功しました！\n\n・路線名: ${appData.name}\n・駅数: ${appData.stations.length}駅\n・種別数: ${appData.types.length}種\n・全列車数: ${appData.trains.length}本\n\n※「全員反映」ボタンを押すと全員へ適用されます。`);
+                        }
+
                         switchScreen('zaisen');
                     } catch(err) {
                         console.error(err);
