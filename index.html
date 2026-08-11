@@ -294,6 +294,20 @@
             cursor: pointer;
             font-weight: bold;
         }
+        .move-btn {
+            background: #546e7a;
+            color: white;
+            border: none;
+            padding: 6px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        .move-btn:disabled {
+            background: #cfd8dc;
+            cursor: not-allowed;
+        }
         .type-preview-badge {
             display: inline-flex;
             align-items: center;
@@ -1058,13 +1072,41 @@
                 row.style.borderRadius = "6px";
                 row.innerHTML = `
                     <span style="font-weight:bold;">駅${idx + 1}:</span>
-                    <input type="text" value="${st.name}" id="st-name-${idx}" placeholder="駅名" style="width: 100px;">
-                    <input type="text" value="${st.code || ''}" id="st-code-${idx}" placeholder="駅番号 (例: KK01)" style="width: 80px;">
-                    <input type="text" value="${st.stopTypes || ''}" id="st-stoptypes-${idx}" placeholder="停車種別 (例: 普通, 急行)" style="flex:1; min-width: 180px;">
+                    <input type="text" value="${escapeHtml(st.name)}" id="st-name-${idx}" placeholder="駅名" style="width: 100px;">
+                    <input type="text" value="${escapeHtml(st.code || '')}" id="st-code-${idx}" placeholder="駅番号 (例: KK01)" style="width: 80px;">
+                    <input type="text" value="${escapeHtml(st.stopTypes || '')}" id="st-stoptypes-${idx}" placeholder="停車種別 (例: 普通, 急行)" style="flex:1; min-width: 140px;">
+                    <button class="move-btn" onclick="moveStationRow(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>▲ 上へ</button>
+                    <button class="move-btn" onclick="moveStationRow(${idx}, 1)" ${idx === appData.stations.length - 1 ? 'disabled' : ''}>▼ 下へ</button>
                     <button onclick="removeStation(${idx})" style="background:#e74c3c; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">削除</button>
                 `;
                 container.appendChild(row);
             });
+        }
+
+        /* 駅の並び順変更処理 */
+        function moveStationRow(idx, direction) {
+            syncRouteInputsToMemory();
+            const targetIdx = idx + direction;
+            if (targetIdx < 0 || targetIdx >= appData.stations.length) return;
+
+            // 駅配列要素の入れ替え
+            const tempSt = appData.stations[idx];
+            appData.stations[idx] = appData.stations[targetIdx];
+            appData.stations[targetIdx] = tempSt;
+
+            // ダイヤ側の駅インデックス参照(stationIndex)もあわせて追従変更
+            appData.trains.forEach(train => {
+                if (!train.schedule) return;
+                train.schedule.forEach(sc => {
+                    if (sc.stationIndex === idx) {
+                        sc.stationIndex = targetIdx;
+                    } else if (sc.stationIndex === targetIdx) {
+                        sc.stationIndex = idx;
+                    }
+                });
+            });
+
+            renderSettingForm();
         }
 
         function addStationRow() {
@@ -1076,6 +1118,18 @@
         function removeStation(idx) {
             syncRouteInputsToMemory();
             appData.stations.splice(idx, 1);
+            
+            // 削除された駅以降のインデックス調整
+            appData.trains.forEach(train => {
+                if (!train.schedule) return;
+                train.schedule = train.schedule.filter(sc => sc.stationIndex !== idx).map(sc => {
+                    if (sc.stationIndex > idx) {
+                        sc.stationIndex -= 1;
+                    }
+                    return sc;
+                });
+            });
+
             renderSettingForm();
         }
 
