@@ -7,6 +7,12 @@
     <!-- Firebase SDK (Compat版) の読み込み -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <!-- PDF.js SDK の読み込み -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        // PDF.js worker の設定
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -734,7 +740,7 @@
             const trainPositions = getCalculatedTrainPositions(currentSec);
 
             if (!appData.stations || appData.stations.length === 0) {
-                wrapper.innerHTML = '<p style="text-align:center; color:#888; padding:20px;">駅が登録されていません。<br>「一般設定」で .oud2 / JSON ファイルをインポートするか、「路線設定」から駅を追加してください。</p>';
+                wrapper.innerHTML = '<p style="text-align:center; color:#888; padding:20px;">駅が登録されていません。<br>「一般設定」で PDF / .oud2 / JSON ファイルをインポートするか、「路線設定」から駅を追加してください。</p>';
                 return;
             }
 
@@ -1126,6 +1132,261 @@
             dl.click();
         }
 
+        /* --- 【PDFダイヤ解析エンジン (PDF.js移植版)】 --- */
+        const PDF_PALETTE = [
+            '#78909c', '#e53935', '#1e88e5', '#43a047', 
+            '#fb8c00', '#8e24aa', '#00acc1', '#f4511e', 
+            '#3949ab', '#c0ca33', '#6d4c41', '#d81b60'
+        ];
+        const PDF_TIME_RE = /^\d{1,2}:\d{2}:\d{2}$/;
+        const PDF_META_LABELS = new Set(['列車番号', '運用番号', '列車種別', '始発駅', '終着駅', '始発駅作業', '終着駅作業', '列車名', '列']);
+
+        async function extractWordsFromPdfBuffer(arrayBuffer) {
+            const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+            const pdf = await loadingTask.promise;
+            const pagesWords = [];
+
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const viewport = page.getViewport({ scale: 1.0 });
+                const textContent = await page.getTextContent();
+                const words = [];
+
+                for (const item of textContent.items) {
+                    const t = item.str ? item.str.trim() : '';
+                    if (t) {
+                        const x0 = item.transform[4];
+                        const y_baseline = item.transform[5];
+                        const fontSize = Math.abs(item.transform[0]) || 10;
+                        const top = viewport.height - y_baseline - fontSize;
+                        words.push({ text: t, x0: x0, top: top });
+                    }
+                }
+                pagesWords.push(words);
+            }
+            return pagesWords;
+        }
+
+        function clusterColumns(cells, tol = 12) {
+            const xs = cells.map(c => c.x0).sort((a, b) => a - b);
+            const centers = [];
+            for (const x of xs) {
+                if (centers.length === 0 || (x - centers[centers.length - 1] > tol)) {
+                    centers.push(x);
+                } else {
+                    centers[centers.length - 1] = (centers[centers.length - 1] + x) / 2.0;
+                }
+            }
+            return centers;
+        }
+
+        function nearestCol(x, centers, tol = 14) {
+            let bestD = null;
+            let bestIdx = null;
+            for (let i = 0; i < centers.length; i++) {
+                const d = Math.abs(x - centers[i]);
+                if (d < tol && (bestD === null || d < bestD)) {
+                    bestD = d;
+                    bestIdx = i;
+                }
+            }
+            return bestIdx;
+        }
+
+        async function parsePdfToAppData(arrayBuffer) {
+            const pages = await extractWordsFromPdfBuffer(arrayBuffer);
+            let route_name = "";
+            const subtables = {};
+            const station_order = [];
+            const station_set = new Set();
+            const train_stops = {};
+
+            for (const words of pages) {
+                const top_words = words.filter(w => w.top < 12).sort((a, b) => a.x0 - b.x0);
+                const title = top_words.map(w => w.text).join("");
+
+                const m = title.match(/(その[1-9１-９])$/);
+                let base_title = title;
+                let subkey = "";
+                if (m) {
+                    base_title = title.substring(0, m.index);
+                    subkey = m[1];
+                }
+
+                if (base_title && !route_name) route_name = base_title;
+                if (!subkey) continue;
+
+                const label_num = words.filter(w => w.x0 < 8 && w.text === '列車番号');
+                if (label_num.length === 0) continue;
+                const row_top = label_num[0].top;
+                const num_cells = words.filter(w => Math.abs(w.top - row_top) < 1.5 && w.x0 >= 8).sort((a, b) => a.x0 - b.x0);
+
+                const centers = clusterColumns(num_cells);
+                if (!subtables[subkey]) subtables[subkey] = { centers: centers, trains: {} };
+                if (centers.length > subtables[subkey].centers.length) {
+                    subtables[subkey].centers = centers;
+                }
+
+                const get_meta_cells = (label) => {
+                    const lbl = words.filter(w => w.x0 < 8 && w.text === label);
+                    if (lbl.length === 0) return [];
+                    return words.filter(w => Math.abs(w.top - lbl[0].top) < 1.5 && w.x0 >= 8).sort((a, b) => a.x0 - b.x0);
+                };
+
+                const type_cells = get_meta_cells('列車種別');
+                const origin_cells = get_meta_cells('始発駅');
+                const dest_cells = get_meta_cells('終着駅');
+
+                num_cells.forEach((c, i) => {
+                    const colidx = nearestCol(c.x0, centers);
+                    if (colidx === null) return;
+
+                    if (!subtables[subkey].trains[colidx]) {
+                        subtables[subkey].trains[colidx] = { number: '', type: '', origin: '', dest: '' };
+                    }
+                    const info = subtables[subkey].trains[colidx];
+                    if (c.text && !info.number) info.number = c.text;
+                    if (i < type_cells.length && type_cells[i].text && !info.type) info.type = type_cells[i].text;
+                    if (i < origin_cells.length && origin_cells[i].text && !info.origin) info.origin = origin_cells[i].text;
+                    if (i < dest_cells.length && dest_cells[i].text && !info.dest) info.dest = dest_cells[i].text;
+                });
+
+                const by_top = {};
+                for (const w of words) {
+                    const k = (Math.round(w.top * 10) / 10).toFixed(1);
+                    if (!by_top[k]) by_top[k] = [];
+                    by_top[k].push(w);
+                }
+
+                let current_station = null;
+                const sortedTops = Object.keys(by_top).map(Number).sort((a, b) => a - b);
+
+                for (const top of sortedTops) {
+                    const k = top.toFixed(1);
+                    const row = by_top[k].sort((a, b) => a.x0 - b.x0);
+                    const label_word = row.find(w => w.x0 < 8);
+                    let marker = null;
+                    let station_for_row = current_station;
+
+                    if (label_word) {
+                        const label = label_word.text;
+                        if (PDF_META_LABELS.has(label) || label.startsWith('尾羽急')) continue;
+
+                        if (label.endsWith('発') && label.length > 1) {
+                            station_for_row = label.slice(0, -1);
+                            marker = '発';
+                            current_station = station_for_row;
+                        } else if (label.endsWith('着') && label.length > 1) {
+                            station_for_row = label.slice(0, -1);
+                            marker = '着';
+                            current_station = station_for_row;
+                        } else {
+                            current_station = label;
+                            station_for_row = label;
+                            marker = null;
+                        }
+                    }
+
+                    if (marker === null) {
+                        const mk_word = row.find(w => w.x0 >= 47 && w.x0 <= 50);
+                        if (mk_word && (mk_word.text === '発' || mk_word.text === '着')) {
+                            marker = mk_word.text;
+                        }
+                    }
+
+                    if ((marker !== '発' && marker !== '着') || !station_for_row) continue;
+
+                    if (!station_set.has(station_for_row)) {
+                        station_set.add(station_for_row);
+                        station_order.push(station_for_row);
+                    }
+
+                    for (const w of row) {
+                        if (w.x0 < 60) continue;
+                        if (!PDF_TIME_RE.test(w.text)) continue;
+
+                        const colidx = nearestCol(w.x0, subtables[subkey].centers);
+                        if (colidx === null) continue;
+
+                        const key = `${subkey}|${colidx}`;
+                        if (!train_stops[key]) train_stops[key] = {};
+                        if (!train_stops[key][station_for_row]) train_stops[key][station_for_row] = { arr: '', dep: '' };
+
+                        if (marker === '発') {
+                            train_stops[key][station_for_row].dep = w.text;
+                        } else {
+                            train_stops[key][station_for_row].arr = w.text;
+                        }
+                    }
+                }
+            }
+
+            const station_index = {};
+            station_order.forEach((name, i) => { station_index[name] = i; });
+
+            const type_names = [];
+            for (const st of Object.values(subtables)) {
+                for (const info of Object.values(st.trains)) {
+                    if (info.type && !type_names.includes(info.type)) {
+                        type_names.push(info.type);
+                    }
+                }
+            }
+
+            let types = type_names.map((n, i) => ({
+                name: n,
+                shortName: n[0] || '普',
+                color: PDF_PALETTE[i % PDF_PALETTE.length]
+            }));
+            if (types.length === 0) {
+                types = [{ name: '普通', shortName: '普', color: PDF_PALETTE[0] }];
+            }
+
+            const trains = [];
+            for (const [subkey, st] of Object.entries(subtables)) {
+                const sortedCols = Object.keys(st.trains).map(Number).sort((a, b) => a - b);
+                for (const colidx of sortedCols) {
+                    const info = st.trains[colidx];
+                    if (!info.number) continue;
+
+                    const stops = train_stops[`${subkey}|${colidx}`] || {};
+                    const schedule = [];
+                    for (const [name, times] of Object.entries(stops)) {
+                        if (!times.arr && !times.dep) continue;
+                        schedule.push({
+                            stationIndex: station_index[name],
+                            arr: times.arr,
+                            dep: times.dep,
+                            type: 'stop'
+                        });
+                    }
+                    if (schedule.length === 0) continue;
+                    schedule.sort((a, b) => a.stationIndex - b.stationIndex);
+
+                    let train_name = info.number;
+                    if (info.dest) train_name += `（${info.dest}行）`;
+
+                    trains.push({
+                        name: train_name,
+                        number: info.number,
+                        destination: info.dest || '',
+                        type: info.type || (types[0] ? types[0].name : ''),
+                        direction: 'down',
+                        isReversed: false,
+                        schedule: schedule
+                    });
+                }
+            }
+
+            return {
+                name: route_name,
+                types: types,
+                stations: station_order.map(n => ({ name: n, code: '', stopTypes: '' })),
+                trains: trains,
+                general: { trackDir: 'up-left', timeUnit: 'sec' }
+            };
+        }
+
         /* --- 【OuDia / OuDia2 (.oud / .oud2) 完全インポート】 --- */
 
         function parseOudTimeToSec(tStr) {
@@ -1318,10 +1579,39 @@
             if (!file) return;
 
             const filename = file.name.toLowerCase();
-
-            // 拡張子に関係なく、テキストとして読み込みを試行しOuDia形式かどうかを判断
             const reader = new FileReader();
 
+            // PDFファイルの読み込み処理分岐
+            if (filename.endsWith('.pdf')) {
+                reader.onload = async function(e) {
+                    try {
+                        const arrayBuffer = e.target.result;
+                        const parsedData = await parsePdfToAppData(arrayBuffer);
+                        appData = parsedData;
+                        if (!appData.types) appData.types = [];
+                        if (!appData.stations) appData.stations = [];
+                        if (!appData.trains) appData.trains = [];
+                        if (!appData.general) appData.general = { trackDir: 'up-left', timeUnit: 'sec' };
+
+                        markUnsaved();
+                        renderSettingForm();
+                        renderTypeForm();
+                        renderDiaForm();
+                        renderZaisen();
+
+                        alert(`PDFの解析が完了しました！\n\n・路線名: ${appData.name}\n・駅数: ${appData.stations.length}駅\n・種別数: ${appData.types.length}種\n・列車数: ${appData.trains.length}本`);
+                        switchScreen('zaisen');
+                    } catch (err) {
+                        console.error('PDF Parse Error:', err);
+                        alert('PDFの解析に失敗しました。フォーマットをご確認ください。');
+                    }
+                    event.target.value = '';
+                };
+                reader.readAsArrayBuffer(file);
+                return;
+            }
+
+            // OuDia / OuDia2 / JSON テキスト系の読み込み処理
             reader.onload = function(e) {
                 const arrayBuffer = e.target.result;
                 let text = '';
@@ -1526,7 +1816,7 @@
                     alert('JSONファイルの読み込みが完了しました！');
                     switchScreen('zaisen');
                 } catch (err) {
-                    alert('ファイルの解析に失敗しました。対応している形式 (.oud, .oud2, JSON) であるかご確認ください。');
+                    alert('ファイルの解析に失敗しました。対応している形式 (.pdf, .oud, .oud2, JSON) であるかご確認ください。');
                 }
 
                 event.target.value = '';
