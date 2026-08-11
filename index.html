@@ -455,7 +455,6 @@
                 <div>
                     <button class="action-btn" onclick="exportJSON()">JSON保存</button>
                     <span style="font-size:0.85rem; font-weight:bold; margin-left:15px;">インポート: </span>
-                    <!-- 制限なし: accept="*/*" に設定 -->
                     <input type="file" id="import-file-setting" accept="*/*" onchange="importAnyFile(event)" style="margin-left: 5px;">
                 </div>
                 <button class="reset-btn" onclick="openResetModal()">リセット</button>
@@ -1178,12 +1177,51 @@
             closeResetModal();
         }
 
+        /* --- 【JSONデータエクスポート（保存）処理】 --- */
         function exportJSON() {
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData, null, 2));
-            const dl = document.createElement('a');
-            dl.setAttribute("href", dataStr);
-            dl.setAttribute("download", "railway_data.json");
-            dl.click();
+            try {
+                // 入力中の未確定フォームデータがあればメモリに同期
+                if (document.getElementById('screen-setting').classList.contains('active')) {
+                    syncRouteInputsToMemory();
+                } else if (document.getElementById('screen-type').classList.contains('active')) {
+                    syncTypeInputsToMemory();
+                } else if (document.getElementById('screen-dia').classList.contains('active')) {
+                    syncDiaInputsToMemory();
+                }
+
+                // 1. 全データをインデント付きのJSON文字列化
+                const jsonString = JSON.stringify(appData, null, 2);
+
+                // 2. Blob（バイナリ形式）を作成
+                const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
+
+                // 3. ダウンロード用の擬似URLを生成
+                const url = URL.createObjectURL(blob);
+
+                // 4. 今日の日付文字列を取得 (YYYYMMDD)
+                const now = new Date();
+                const dateStr = now.getFullYear() +
+                    String(now.getMonth() + 1).padStart(2, '0') +
+                    String(now.getDate()).padStart(2, '0');
+
+                // 路線名があればファイル名に利用
+                const routeName = (appData.name && appData.name.trim()) ? appData.name.trim() : 'railway_data';
+                const fileName = `${routeName}_${dateStr}.json`;
+
+                // 5. 擬似的に <a> 要素を作成してダウンロード実行
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+
+                // 6. メモリ解放処理
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                console.error("JSONエクスポートエラー:", err);
+                alert("JSONファイルの出力中にエラーが発生しました。");
+            }
         }
 
         /* --- 【PDFダイヤ解析エンジン (PDF.js移植版)】 --- */
