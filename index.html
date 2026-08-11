@@ -3,468 +3,492 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>鉄道在線位置システム</title>
-    <!-- Firebase SDK (v8) -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <title>列車管理システム</title>
+    <!-- Firebase SDK (Compat版) の読み込み -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
-        }
-
         body {
-            background-color: #f0f2f5;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            background: #f4f5f7;
             color: #333;
-            padding-bottom: 50px;
         }
-
         header {
-            background-color: #1b365d;
+            background: #2c3e50;
             color: white;
-            padding: 15px 20px;
+            padding: 10px 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            position: sticky;
-            top: 0;
-            z-index: 1000;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-
-        header h1 {
-            font-size: 1.2rem;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .header-controls {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .sync-badge {
-            background-color: #27ae60;
-            color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 0.8rem;
+        .header-title {
+            font-size: 1.1rem;
             font-weight: bold;
         }
-
-        .sync-badge.unsaved {
-            background-color: #e67e22;
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
-
-        .btn-sync {
-            background-color: #e67e22;
+        #sync-status {
+            font-size: 0.75rem;
+            background: #27ae60;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+        #sync-status.unsaved {
+            background: #e67e22;
+        }
+        #live-clock {
+            font-size: 0.95rem;
+            background: rgba(0,0,0,0.25);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        .btn-push-firebase {
+            background: #27ae60;
             color: white;
             border: none;
-            padding: 8px 12px;
+            padding: 6px 12px;
             border-radius: 4px;
             cursor: pointer;
             font-weight: bold;
             font-size: 0.85rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
             transition: background 0.2s;
         }
-
-        .btn-sync:hover {
-            background-color: #d35400;
+        .btn-push-firebase:hover {
+            background: #2196f3;
         }
-
-        .live-clock {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 1.1rem;
-            font-weight: bold;
-            background: rgba(255,255,255,0.1);
-            padding: 4px 8px;
-            border-radius: 4px;
-        }
-
-        nav {
-            background-color: #2c3e50;
-            display: flex;
-            overflow-x: auto;
-        }
-
-        nav button {
-            background: none;
+        .tab-buttons button {
+            background: rgba(255,255,255,0.15);
             border: none;
-            color: #ecf0f1;
-            padding: 12px 20px;
-            font-size: 0.95rem;
+            color: white;
+            padding: 6px 10px;
             cursor: pointer;
-            white-space: nowrap;
-            transition: background 0.2s;
-        }
-
-        nav button:hover {
-            background-color: #34495e;
-        }
-
-        nav button.active {
-            background-color: #3498db;
+            border-radius: 4px;
+            font-size: 0.85rem;
             font-weight: bold;
         }
-
-        .container {
-            max-width: 1000px;
-            margin: 20px auto;
-            padding: 0 15px;
+        .tab-buttons button.active {
+            background: white;
+            color: #2c3e50;
         }
-
         .screen {
             display: none;
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            padding: 16px;
         }
-
         .screen.active {
             display: block;
         }
 
-        h2 {
-            font-size: 1.2rem;
-            margin-bottom: 15px;
-            padding-bottom: 8px;
-            border-bottom: 2px solid #3498db;
-            color: #2c3e50;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .row-group {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        input[type="text"], select {
-            padding: 8px 10px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-size: 0.9rem;
-        }
-
-        .btn {
-            padding: 8px 15px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 0.9rem;
-            transition: opacity 0.2s;
-        }
-
-        .btn:hover {
-            opacity: 0.9;
-        }
-
-        .btn-primary { background-color: #3498db; color: white; }
-        .btn-success { background-color: #2ecc71; color: white; }
-        .btn-danger { background-color: #e74c3c; color: white; }
-        .btn-secondary { background-color: #95a5a6; color: white; }
-
-        /* 縦型在線位置ビュー */
-        .vertical-route-view {
-            position: relative;
+        /* アプリ風 縦型路線図スタイル */
+        .app-container {
+            max-width: 480px;
+            margin: 0 auto;
+            background: #fff;
+            min-height: 85vh;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
             padding: 20px 0;
-            margin-top: 10px;
+        }
+        .route-direction-header {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        .dir-badge {
+            display: inline-block;
+            background: #78909c;
+            color: white;
+            padding: 4px 16px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: bold;
         }
 
+        .vertical-route-wrapper {
+            position: relative;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* 中央の路線縦ライン */
         .vertical-line {
             position: absolute;
+            top: 20px;
+            bottom: 20px;
             left: 50%;
-            top: 0;
-            bottom: 0;
             width: 4px;
-            background-color: #bdc3c7;
+            background: #29b6f6;
             transform: translateX(-50%);
             z-index: 1;
         }
 
         .v-station-row {
             position: relative;
+            width: 100%;
+            min-height: 80px;
             display: flex;
             align-items: center;
-            min-height: 60px;
             z-index: 2;
-            margin: 10px 0;
+            margin-bottom: 5px;
         }
 
+        /* 駅情報（左側） */
         .station-info-left {
-            flex: 1;
+            width: 42%;
+            padding-right: 15px;
             text-align: right;
-            padding-right: 25px;
-            position: relative;
-        }
-
-        .station-node {
-            width: 16px;
-            height: 16px;
-            background-color: white;
-            border: 4px solid #34495e;
-            border-radius: 50%;
-            z-index: 3;
-            margin: 0 -8px;
-        }
-
-        .station-track-right {
-            flex: 1;
-            padding-left: 25px;
-            position: relative;
-        }
-
-        .st-name {
-            font-size: 1.1rem;
-            font-weight: bold;
-            color: #2c3e50;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
         }
 
         .st-code {
-            font-size: 0.75rem;
-            color: #7f8c8d;
+            border: 2px solid #0288d1;
+            color: #0288d1;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.6rem;
+            font-weight: bold;
+            margin-bottom: 2px;
+            box-sizing: border-box;
+            letter-spacing: -0.5px;
+            line-height: 1;
         }
 
+        .st-name {
+            font-weight: bold;
+            font-size: 1rem;
+            line-height: 1.2;
+            margin-bottom: 4px;
+        }
+
+        /* 停車種別バッジ表示エリア */
         .stop-types-wrapper {
             display: flex;
+            flex-wrap: wrap;
             gap: 3px;
             justify-content: flex-end;
-            margin-top: 2px;
+            max-width: 130px;
+            margin-bottom: 4px;
+        }
+        .stop-type-icon {
+            min-width: 18px;
+            height: 18px;
+            padding: 0 3px;
+            border-radius: 3px;
+            color: white;
+            font-size: 0.65rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            box-sizing: border-box;
         }
 
-        .stop-type-icon {
-            font-size: 0.65rem;
-            padding: 1px 4px;
-            border-radius: 2px;
-            color: white;
-            font-weight: bold;
+        /* 中央の駅ドット */
+        .station-node {
+            width: 12px;
+            height: 12px;
+            background: white;
+            border: 3px solid #0288d1;
+            border-radius: 50%;
+            z-index: 3;
+            margin: 0 auto;
+        }
+
+        /* 列車表示エリア */
+        .station-track-right {
+            width: 42%;
+            padding-left: 15px;
         }
 
         .v-interval-row {
             position: relative;
+            width: 100%;
             height: 50px;
             z-index: 2;
         }
 
+        /* 列車アイコン */
         .train-icon {
-            position: absolute;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
             padding: 3px 8px;
             border-radius: 4px;
             color: white;
             font-size: 0.75rem;
             font-weight: bold;
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            white-space: nowrap;
+            position: absolute;
             transform: translateY(-50%);
-            z-index: 4;
-            transition: top 0.5s linear;
+            white-space: nowrap;
         }
 
-        .dir-arrow-down::after { content: " ↓"; }
-        .dir-arrow-up::after { content: " ↑"; }
+        .dir-arrow-down::after { content: " ▼"; font-size: 0.65rem; }
+        .dir-arrow-up::after { content: " ▲"; font-size: 0.65rem; }
 
+        /* 設定画面UI */
+        .setting-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            max-width: 650px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .row-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        input, select {
+            padding: 6px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        input[type="color"] {
+            padding: 2px;
+            width: 40px;
+            height: 32px;
+            cursor: pointer;
+        }
+        button.action-btn {
+            background: #1e88e5;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button.reset-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
         .type-preview-badge {
-            display: inline-block;
-            padding: 3px 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2px 6px;
             border-radius: 3px;
             color: white;
-            font-size: 0.8rem;
+            font-size: 0.7rem;
             font-weight: bold;
-            min-width: 30px;
+            min-width: 24px;
+            height: 22px;
             text-align: center;
+            box-sizing: border-box;
         }
 
-        .setting-card {
-            background: #fafafa;
-            border: 1px solid #eee;
-            border-radius: 6px;
-            padding: 15px;
-            margin-bottom: 15px;
-        }
-
+        /* モーダル表示用スタイル */
         .modal-overlay {
             display: none;
             position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: 2000;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
             justify-content: center;
             align-items: center;
         }
-
         .modal-overlay.active {
             display: flex;
         }
-
         .modal-content {
             background: white;
-            padding: 25px;
+            padding: 20px;
             border-radius: 8px;
-            max-width: 500px;
+            max-width: 420px;
             width: 90%;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            text-align: center;
+            max-height: 80vh;
+            overflow-y: auto;
         }
+        .modal-btn-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .modal-btn {
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            color: white;
+        }
+        .btn-reset-dia { background: #f39c12; }
+        .btn-reset-st { background: #e67e22; }
+        .btn-reset-all { background: #c0392b; }
+        .btn-cancel { background: #95a5a6; }
 
+        /* エラーカード表示スタイル */
         .error-card {
-            background: #fdf2e9;
-            border-left: 4px solid #e67e22;
+            background-color: #fff0f0;
+            border: 1px solid #ff4d4f;
+            border-radius: 6px;
             padding: 10px;
             margin-bottom: 8px;
-            font-size: 0.85rem;
+            text-align: left;
+            font-size: 0.8rem;
         }
-
-        .err-code {
+        .error-card .err-code {
             font-weight: bold;
-            color: #c0392b;
+            color: #cf1322;
         }
     </style>
 </head>
 <body>
 
     <header>
-        <h1>🚆 鉄道在線位置システム</h1>
-        <div class="header-controls">
-            <span class="sync-badge" id="sync-status">同期済</span>
-            <button class="btn-sync" onclick="pushToFirebase()">全員へ反映</button>
-            <div class="live-clock" id="live-clock">--:--:--</div>
+        <div class="header-title">列車管理システム</div>
+        <div class="header-right">
+            <div id="sync-status">同期済</div>
+            <button class="btn-push-firebase" onclick="pushToFirebase()">全員反映</button>
+            <div id="live-clock">--:--:--</div>
+            <div class="tab-buttons">
+                <button id="btn-zaisen" class="active" onclick="switchScreen('zaisen')">走行位置</button>
+                <button id="btn-type" onclick="switchScreen('type')">種別設定</button>
+                <button id="btn-setting" onclick="switchScreen('setting')">路線設定</button>
+                <button id="btn-dia" onclick="switchScreen('dia')">ダイヤ設定</button>
+                <button id="btn-general" onclick="switchScreen('general')">一般設定</button>
+            </div>
         </div>
     </header>
 
-    <nav>
-        <button id="btn-zaisen" class="active" onclick="switchScreen('zaisen')">走行位置</button>
-        <button id="btn-dia" onclick="switchScreen('dia')">ダイヤ設定</button>
-        <button id="btn-setting" onclick="switchScreen('setting')">路線設定</button>
-        <button id="btn-type" onclick="switchScreen('type')">種別設定</button>
-        <button id="btn-general" onclick="switchScreen('general')">一般設定 / インポート</button>
-    </nav>
-
-    <div class="container">
-        <!-- 走行位置画面 -->
-        <div id="screen-zaisen" class="screen active">
-            <h2>
-                <span id="display-route-title">（路線名未設定）</span>
-                <span style="font-size: 0.8rem; color: #666; font-weight: normal;">リアルタイム自動更新中</span>
-            </h2>
-            <div id="vertical-route-view" class="vertical-route-view">
+    <!-- 【1. 走行位置表示画面】 -->
+    <div id="screen-zaisen" class="screen active">
+        <div class="app-container">
+            <div class="route-direction-header">
+                <span class="dir-badge" id="display-route-title">（路線名未設定）</span>
+            </div>
+            
+            <div class="vertical-route-wrapper" id="vertical-route-view">
                 <div class="vertical-line"></div>
             </div>
         </div>
+    </div>
 
-        <!-- ダイヤ設定画面 -->
-        <div id="screen-dia" class="screen">
-            <h2>
-                ダイヤ設定（列車・時刻）
-                <button class="btn btn-primary" onclick="addTrainRow()">＋ 列車追加</button>
-            </h2>
-            <div id="train-inputs"></div>
-            <div style="margin-top: 15px;">
-                <button class="btn btn-success" onclick="saveDiaSettings()">ダイヤ保存</button>
-            </div>
-        </div>
-
-        <!-- 路線設定画面 -->
-        <div id="screen-setting" class="screen">
-            <h2>
-                路線・駅設定
-                <button class="btn btn-primary" onclick="addStationRow()">＋ 駅追加</button>
-            </h2>
-            <div class="row-group" style="margin-bottom: 20px;">
-                <label style="font-weight: bold; width: 80px;">路線名:</label>
-                <input type="text" id="route-title" placeholder="例: 本線" style="flex: 1;">
-            </div>
-            <div id="station-inputs"></div>
-            <div style="margin-top: 15px;">
-                <button class="btn btn-success" onclick="saveRouteSettings()">路線保存</button>
-            </div>
-        </div>
-
-        <!-- 種別設定画面 -->
-        <div id="screen-type" class="screen">
-            <h2>
-                列車種別設定
-                <button class="btn btn-primary" onclick="addTypeRow()">＋ 種別追加</button>
-            </h2>
+    <!-- 【2. 種別設定画面】 -->
+    <div id="screen-type" class="screen">
+        <div class="setting-card">
+            <h3>列車種別・カラー・表示文字設定</h3>
+            <p style="font-size: 0.85rem; color: #666;">種別名、路線図上の「表示文字（略称）」、カラーを設定します。</p>
             <div id="type-inputs"></div>
-            <div style="margin-top: 15px;">
-                <button class="btn btn-success" onclick="saveTypeSettings()">種別保存</button>
+            <button class="action-btn" onclick="addTypeRow()">＋ 種別追加</button>
+            <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveTypeSettings()">ローカル保存</button>
+        </div>
+    </div>
+
+    <!-- 【3. 路線設定画面】 -->
+    <div id="screen-setting" class="screen">
+        <div class="setting-card">
+            <h3>路線・駅設定</h3>
+            <input type="text" id="route-title" placeholder="路線名 (例:〇〇線)" style="width: 90%; margin-bottom: 12px;">
+            <p style="font-size: 0.8rem; color: #666; margin-top:-5px;">※停車種別はカンマ「,」区切りで複数指定できます（例: 普通, 急行, ホリデー快速）</p>
+            <div id="station-inputs"></div>
+            <button class="action-btn" onclick="addStationRow()">＋ 駅追加</button>
+            <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveRouteSettings()">ローカル保存</button>
+        </div>
+    </div>
+
+    <!-- 【4. ダイヤ設定画面】 -->
+    <div id="screen-dia" class="screen">
+        <div class="setting-card">
+            <h3>列車・時刻設定</h3>
+            <div id="train-inputs"></div>
+            <button class="action-btn" onclick="addTrainRow()">＋ 列車追加</button>
+            <button class="action-btn" style="background: #2e7d32; margin-left: 10px;" onclick="saveDiaSettings()">ローカル保存</button>
+        </div>
+    </div>
+
+    <!-- 【5. 一般設定画面】 -->
+    <div id="screen-general" class="screen">
+        <div class="setting-card">
+            <h3>データ操作</h3>
+            <div class="row-group" style="justify-content: space-between;">
+                <div>
+                    <button class="action-btn" onclick="exportJSON()">JSON保存</button>
+                    <span style="font-size:0.85rem; font-weight:bold; margin-left:15px;">インポート: </span>
+                    <!-- 制限なし: accept="*/*" に設定 -->
+                    <input type="file" id="import-file-setting" accept="*/*" onchange="importAnyFile(event)" style="margin-left: 5px;">
+                </div>
+                <button class="reset-btn" onclick="openResetModal()">リセット</button>
             </div>
         </div>
 
-        <!-- 一般設定 / インポート画面 -->
-        <div id="screen-general" class="screen">
-            <h2>一般設定 & ファイル入出力</h2>
+        <div class="setting-card">
+            <h3>一般設定</h3>
+            <p style="font-size: 0.85rem; color: #666;">走行位置の左右配置および時刻入力の単位を設定します。</p>
             
-            <div class="setting-card">
-                <h3>表示設定</h3>
-                <div class="row-group" style="margin-top: 10px;">
-                    <label>上り列車の配置位置:</label>
-                    <select id="general-track-dir">
-                        <option value="up-left">左側 (デフォルト)</option>
-                        <option value="up-right">右側</option>
-                    </select>
-                </div>
-                <div class="row-group">
-                    <label>時刻の入力精度:</label>
-                    <select id="general-time-unit">
-                        <option value="sec">秒単位 (hh:mm:ss)</option>
-                        <option value="min">分単位 (hh:mm)</option>
-                    </select>
-                </div>
-                <button class="btn btn-success" onclick="saveGeneralSettings()">設定保存</button>
+            <div style="margin-top: 15px;">
+                <label style="font-weight: bold; display: block; margin-bottom: 8px;">走行トラック位置設定:</label>
+                <select id="general-track-dir" style="width: 100%; padding: 8px;">
+                    <option value="up-left">上り（上方向行き）：左走行 / 下り（下方向行き）：右走行</option>
+                    <option value="down-left">下り（下方向行き）：左走行 / 上り（上方向行き）：右走行</option>
+                </select>
             </div>
 
-            <div class="setting-card">
-                <h3>ファイルインポート / エクスポート</h3>
-                <p style="font-size: 0.85rem; color: #666; margin: 8px 0;">
-                    OuDia / OuDiaSecond (.oud, .oud2) または JSON ファイルを取り込んで路線・ダイヤを一括設定できます。
-                </p>
-                <div class="row-group" style="margin-top: 10px;">
-                    <input type="file" id="file-import-input" accept=".oud,.oud2,.json" onchange="importAnyFile(event)" style="display: none;">
-                    <button class="btn btn-primary" onclick="document.getElementById('file-import-input').click()">ファイルを選択してインポート (.oud / .oud2 / .json)</button>
-                    <button class="btn btn-secondary" onclick="exportJSON()">現在のデータをJSON出力</button>
-                </div>
+            <div style="margin-top: 20px;">
+                <label style="font-weight: bold; display: block; margin-bottom: 8px;">時刻入力単位設定:</label>
+                <select id="general-time-unit" style="width: 100%; padding: 8px;">
+                    <option value="sec">秒単位 (例: 12:00:00)</option>
+                    <option value="min">分単位 (例: 12:00)</option>
+                </select>
             </div>
 
-            <div class="setting-card" style="border-color: #f5c6cb; background: #fdf7f7;">
-                <h3 style="color: #721c24;">危険な操作</h3>
-                <p style="font-size: 0.85rem; color: #721c24; margin: 8px 0;">
-                    保存されているデータを消去します。
-                </p>
-                <button class="btn btn-danger" onclick="openResetModal()">データリセットメニュー</button>
-            </div>
+            <button class="action-btn" style="background: #2e7d32; margin-top: 20px;" onclick="saveGeneralSettings()">ローカル保存</button>
         </div>
     </div>
 
     <!-- リセットモーダル -->
     <div id="reset-modal" class="modal-overlay">
         <div class="modal-content">
-            <h3 style="margin-bottom: 15px; color: #c0392b;">データのリセット</h3>
-            <p style="margin-bottom: 15px; font-size: 0.9rem;">消去したい項目を選択してください（「全員反映」を押すまでFirebase側は削除されません）。</p>
-            <div style="display: flex; flex-direction: column; gap: 10px;">
-                <button class="btn btn-danger" onclick="executeReset('dia')">ダイヤ（列車データ）のみ消去</button>
-                <button class="btn btn-danger" onclick="executeReset('station')">路線・駅設定のみ消去</button>
-                <button class="btn btn-danger" style="background-color: #8b0000;" onclick="executeReset('all')">全データを完全クリア</button>
-                <button class="btn btn-secondary" onclick="closeResetModal()" style="margin-top: 10px;">キャンセル</button>
+            <h3 style="margin-top:0;">リセット項目の選択</h3>
+            <p style="font-size: 0.85rem; color: #666;">削除する項目を選択してください。</p>
+            <div class="modal-btn-list">
+                <button class="modal-btn btn-reset-dia" onclick="executeReset('dia')">ダイヤのみリセット</button>
+                <button class="modal-btn btn-reset-st" onclick="executeReset('station')">駅・路線設定のみリセット</button>
+                <button class="modal-btn btn-reset-all" onclick="executeReset('all')">すべてリセット (全消去)</button>
+                <button class="modal-btn btn-cancel" onclick="closeResetModal()">キャンセル</button>
             </div>
         </div>
     </div>
 
     <!-- エラー通知モーダル -->
     <div id="error-modal" class="modal-overlay">
-        <div class="modal-content" style="max-height: 80vh; overflow-y: auto;">
-            <h3 style="margin-bottom: 10px; color: #d35400;">インポート時の注意・自動補正ログ</h3>
+        <div class="modal-content">
+            <h3 style="margin-top:0; color: #c0392b;">⚠️ 時刻データのエラー検出</h3>
+            <p style="font-size: 0.8rem; color: #666; margin-bottom: 10px;">到着時刻が出発時刻より遅くなっている不整合データを検出・自動補正しました。</p>
             <div id="error-modal-list"></div>
-            <button class="btn btn-primary" onclick="closeErrorModal()" style="margin-top: 15px; width: 100%;">確認しました</button>
+            <div class="modal-btn-list">
+                <button class="modal-btn btn-cancel" onclick="closeErrorModal()">閉じる</button>
+            </div>
         </div>
     </div>
 
@@ -1134,9 +1158,6 @@
             return '';
         }
 
-        // OuDia / OuDiaSecond は「.」でブロックを閉じるテキスト形式。
-        // Eki / Ressyasyubetsu / Ressya の各項目だけでなく、
-        // 未知の項目も rawFields に保持しておく。
         function parseOuDia2(text) {
             const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/);
             const root = {
@@ -1151,7 +1172,6 @@
 
             const stack = [];
             let currentObj = null;
-            let currentSection = null;
 
             const addRootField = (key, value) => {
                 if (key === 'FileType') root.FileType = value;
@@ -1160,40 +1180,33 @@
             };
 
             for (let i = 0; i < lines.length; i++) {
-                const rawLine = lines[i];
-                const line = rawLine.trim();
+                const line = lines[i].trim();
                 if (!line) continue;
 
-                // セクション開始: Eki. / Ressya. / Kudari. など
                 if (line.endsWith('.')) {
                     const secName = line.slice(0, -1);
                     stack.push(secName);
 
                     if (secName === 'Eki' || secName === 'Ressyasyubetsu' || secName === 'Ressya') {
                         currentObj = { rawFields: {} };
-                        currentSection = secName;
                     }
                     continue;
                 }
 
-                // セクション終了
                 if (line === '.') {
                     const lastSec = stack.pop();
                     if (lastSec === 'Eki' && currentObj) {
                         root.Eki.push(currentObj);
                         currentObj = null;
-                        currentSection = null;
                     } else if (lastSec === 'Ressyasyubetsu' && currentObj) {
                         root.Syubetsu.push(currentObj);
                         currentObj = null;
-                        currentSection = null;
                     } else if (lastSec === 'Ressya' && currentObj) {
                         const parent = stack[stack.length - 1];
                         const houkou = currentObj.Houkou || '';
                         if (parent === 'Kudari' || houkou === 'Kudari') root.Kudari.push(currentObj);
                         else root.Nobori.push(currentObj);
                         currentObj = null;
-                        currentSection = null;
                     }
                     continue;
                 }
@@ -1215,8 +1228,6 @@
             return root;
         }
 
-        // OuDia の EkiJikoku 1項目を解析
-        // 例: 2;123456/123500$0
         function parseOudStationTime(raw) {
             if (raw === undefined || raw === null) {
                 return { stationStatus: '', arr: '', dep: '', raw: '' };
@@ -1225,7 +1236,6 @@
             const original = String(raw).trim();
             if (!original) return { stationStatus: '', arr: '', dep: '', raw: original };
 
-            // $以降は発着番線など。ダイヤ時刻には不要だが raw に残す。
             const withoutTrack = original.split('$')[0];
             const semicolon = withoutTrack.indexOf(';');
 
@@ -1237,7 +1247,6 @@
                 timePart = withoutTrack.substring(semicolon + 1);
             }
 
-            // 時刻の前後を分離。片方だけの場合も対応。
             const slash = timePart.indexOf('/');
             let arr = '';
             let dep = '';
@@ -1264,7 +1273,6 @@
             const idx = parseInt(raw, 10);
             if (!Number.isNaN(idx) && oudData.Syubetsu[idx]) return oudData.Syubetsu[idx];
 
-            // 一部派生形式で種別名が直接入るケースにも対応
             if (raw && typeof raw === 'string') {
                 const direct = oudData.Syubetsu.find(s =>
                     s.Syubetsumei === raw || s.Ryakusyou === raw
@@ -1275,14 +1283,12 @@
         }
 
         function getTrainDestination(schedule, stations, rObj) {
-            // 路線外終着駅の情報がある場合はそれを優先
             const outerTerminal =
                 rObj.OuterTerminalEkimei ||
                 rObj.OuterTerminal ||
                 rObj.ShuchakuEkimei ||
                 '';
 
-            // 列車側に終着駅名が直接入っている派生形式にも対応
             const directDestination =
                 rObj.Shuuchakueki ||
                 rObj.Shuchakueki ||
@@ -1291,8 +1297,6 @@
                 '';
 
             if (directDestination) return directDestination;
-
-            // 通常のOuDiaでは「最後に時刻が存在する駅」が終着駅。
             if (!schedule.length) return outerTerminal || '';
 
             const last = schedule[schedule.length - 1];
@@ -1315,41 +1319,37 @@
 
             const filename = file.name.toLowerCase();
 
-            if (filename.endsWith('.oud') || filename.endsWith('.oud2')) {
-                const reader = new FileReader();
+            // 拡張子に関係なく、テキストとして読み込みを試行しOuDia形式かどうかを判断
+            const reader = new FileReader();
 
-                reader.onload = function(e) {
+            reader.onload = function(e) {
+                const arrayBuffer = e.target.result;
+                let text = '';
+
+                try {
+                    text = new TextDecoder('shift_jis').decode(arrayBuffer);
+                    if (!text.includes('FileType=') && !text.includes('Rosenmei=')) {
+                        text = new TextDecoder('utf-8').decode(arrayBuffer);
+                    }
+                } catch (err) {
+                    text = new TextDecoder('utf-8').decode(arrayBuffer);
+                }
+
+                // OuDia形式のデータが含まれているかチェック
+                if (text.includes('FileType=') || text.includes('Rosenmei=') || filename.endsWith('.oud') || filename.endsWith('.oud2')) {
                     try {
-                        const arrayBuffer = e.target.result;
-                        let text = '';
-
-                        // OuDia / OuDiaSecond は Shift-JIS 系のファイルを使用する。
-                        // UTF-8 BOM/UTF-8 のファイルもフォールバックで対応。
-                        try {
-                            text = new TextDecoder('shift_jis').decode(arrayBuffer);
-                            if (!text.includes('FileType=') && !text.includes('Rosenmei=')) {
-                                text = new TextDecoder('utf-8').decode(arrayBuffer);
-                            }
-                        } catch (err) {
-                            text = new TextDecoder('utf-8').decode(arrayBuffer);
-                        }
-
                         const oudData = parseOuDia2(text);
                         const errors = [];
 
-                        // 1. 路線名
                         appData.name = oudData.RouteName || appData.name || '';
 
-                        // 2. 駅を完全取り込み
                         appData.stations = oudData.Eki.map((eObj, idx) => ({
                             name: eObj.Ekimei || `駅${idx + 1}`,
                             code: eObj.Ekikigou || eObj.EkimeiJikokuRyaku || '',
                             stopTypes: '',
-                            // OuDia側の設定も保持
                             raw: eObj.rawFields || {}
                         }));
 
-                        // 3. 種別を完全取り込み
                         const newTypes = [];
                         const usedTypeNames = new Set();
 
@@ -1380,7 +1380,6 @@
                         }
                         appData.types = newTypes;
 
-                        // 4. 全列車を取り込み
                         const newTrains = [];
                         const totalStations = appData.stations.length;
 
@@ -1405,10 +1404,7 @@
                                     rObj.RessyaMei ||
                                     '';
 
-                                // 列車番号が無い場合は列車名、両方無い場合のみ自動名
                                 const displayName = number || trainName || `${dirName}${trainIndex + 1}`;
-
-                                // OuDia標準は EkiJikoku。古い/派生形式の EkiJikan にも対応。
                                 const jikanStr = rObj.EkiJikoku || rObj.EkiJikan || '';
                                 const jikanArray = String(jikanStr).split(',');
                                 const schedule = [];
@@ -1424,7 +1420,6 @@
                                         let arr = parsed.arr;
                                         let dep = parsed.dep;
 
-                                        // 到着 > 発車なら自動補正（元データは raw に保持）
                                         const arrSec = parseOudTimeToSec(arr);
                                         const depSec = parseOudTimeToSec(dep);
                                         if (arrSec !== null && depSec !== null && arrSec > depSec) {
@@ -1455,7 +1450,6 @@
                                     const destination = getTrainDestination(schedule, appData.stations, rObj);
 
                                     newTrains.push({
-                                        // 列車番号・列車名・表示名を全部保存
                                         number,
                                         name: trainName || number || displayName,
                                         displayName,
@@ -1464,7 +1458,6 @@
                                         direction,
                                         isReversed,
                                         schedule,
-                                        // OuDiaの列車オブジェクトを丸ごと保存
                                         raw: rObj.rawFields || {}
                                     });
                                 }
@@ -1476,7 +1469,6 @@
 
                         appData.trains = newTrains;
 
-                        // インポートした時点で表示に反映
                         markUnsaved();
                         renderSettingForm();
                         renderTypeForm();
@@ -1484,16 +1476,12 @@
                         renderZaisen();
 
                         const summary =
-                            `OuDiaファイルの読み込みが完了しました！\n\n` +
+                            `ファイルの読み込みが完了しました！\n\n` +
                             `・ファイル: ${file.name}\n` +
-                            `・形式: ${oudData.FileType || 'OuDia / OuDiaSecond'}\n` +
                             `・路線名: ${appData.name || '未設定'}\n` +
                             `・駅数: ${appData.stations.length}\n` +
                             `・種別数: ${appData.types.length}\n` +
-                            `・列車数: ${appData.trains.length}\n` +
-                            `・下り: ${oudData.Kudari.length}本\n` +
-                            `・上り: ${oudData.Nobori.length}本\n\n` +
-                            `列車番号・列車名・種別・行き先・各駅時刻を自動取り込みしました。`;
+                            `・列車数: ${appData.trains.length}`;
 
                         if (errors.length > 0) {
                             const errContainer = document.getElementById('error-modal-list');
@@ -1514,22 +1502,18 @@
                         }
 
                         switchScreen('zaisen');
+                        event.target.value = '';
+                        return;
 
                     } catch (err) {
-                        console.error('OuDia import error:', err);
-                        alert('ファイル形式の解析に失敗しました。\n\n正しい .oud / .oud2 ファイルか確認してください。\n\n' + err.message);
+                        console.error('OuDia parse attempt failed:', err);
                     }
-                };
-                reader.readAsArrayBuffer(file);
-                event.target.value = '';
-                return;
-            }
+                }
 
-            // JSON
-            const reader = new FileReader();
-            reader.onload = function(e) {
+                // OuDiaでない場合はJSONとして解析を試みる
                 try {
-                    appData = JSON.parse(e.target.result);
+                    const parsedData = JSON.parse(text);
+                    appData = parsedData;
                     if (!appData.types) appData.types = [];
                     if (!appData.stations) appData.stations = [];
                     if (!appData.trains) appData.trains = [];
@@ -1542,11 +1526,13 @@
                     alert('JSONファイルの読み込みが完了しました！');
                     switchScreen('zaisen');
                 } catch (err) {
-                    alert('サポートされていないファイル形式です。.oud / .oud2 または .json を選択してください。');
+                    alert('ファイルの解析に失敗しました。対応している形式 (.oud, .oud2, JSON) であるかご確認ください。');
                 }
+
+                event.target.value = '';
             };
-            reader.readAsText(file);
-            event.target.value = '';
+
+            reader.readAsArrayBuffer(file);
         }
     </script>
 </body>
