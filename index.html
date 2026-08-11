@@ -347,7 +347,7 @@
         .btn-reset-all { background: #c0392b; }
         .btn-cancel { background: #95a5a6; }
 
-        /* 追加：エラーカード表示スタイル */
+        /* エラーカード表示スタイル */
         .error-card {
             background-color: #fff0f0;
             border: 1px solid #ff4d4f;
@@ -435,7 +435,8 @@
                 <div>
                     <button class="action-btn" onclick="exportJSON()">JSON保存</button>
                     <span style="font-size:0.85rem; font-weight:bold; margin-left:15px;">インポート (.oud2 / .oud / JSON): </span>
-                    <input type="file" id="import-file-setting" accept=".json,.oud,.oud2,*" onchange="importAnyFile(event)" style="margin-left: 5px;">
+                    <!-- accept="*/*" に変更し、すべての拡張子を選択可能に修正 -->
+                    <input type="file" id="import-file-setting" accept="*/*" onchange="importAnyFile(event)" style="margin-left: 5px;">
                 </div>
                 <button class="reset-btn" onclick="openResetModal()">リセット</button>
             </div>
@@ -479,7 +480,7 @@
         </div>
     </div>
 
-    <!-- 追加：エラー通知モーダル -->
+    <!-- エラー通知モーダル -->
     <div id="error-modal" class="modal-overlay">
         <div class="modal-content">
             <h3 style="margin-top:0; color: #c0392b;">⚠️ 時刻データのエラー検出</h3>
@@ -519,7 +520,7 @@
             }
         };
 
-        let isUnsaved = false; // 未反映フラグ
+        let isUnsaved = false;
 
         // 起動時に1回だけFirebaseからデータを読み込み
         appDataRef.once('value').then((snapshot) => {
@@ -1100,9 +1101,8 @@
             dl.click();
         }
 
-        /* --- 【完全版 OuDia / OuDia2 (.oud / .oud2) 解析および時間検証機能】 --- */
+        /* --- 【OuDia / OuDia2 (.oud / .oud2) 解析機能】 --- */
         
-        // 時刻パース用の内部ユーティリティ (HHMMSS などの秒換算)
         function parseOudTimeToSec(tStr) {
             if (!tStr) return null;
             let s = tStr.padStart(tStr.length <= 4 ? 4 : 6, '0');
@@ -1217,7 +1217,7 @@
                         }
 
                         const oudData = parseOuDia2(text);
-                        const errors = []; // エラーログ保持用
+                        const errors = [];
 
                         // 1. 路線名
                         if (oudData.RouteName) {
@@ -1251,7 +1251,7 @@
                         }
                         appData.types = newTypes;
 
-                        // 4. ダイヤデータ（エラー検証ロジックを統合）
+                        // 4. ダイヤデータ
                         const newTrains = [];
                         const totalStations = appData.stations.length;
 
@@ -1272,7 +1272,6 @@
                                     let raw = jikanArray[sIdx] || '';
 
                                     if (raw && raw !== '1' && raw !== '2') {
-                                        // トラック情報 (例: "1;173845/1728") からトラックIDを削除
                                         let cleanRaw = raw.replace(/^\d+;/, '').replace(/\$.*$/, '');
 
                                         if (cleanRaw.includes('/')) {
@@ -1283,7 +1282,6 @@
                                             const arrSec = parseOudTimeToSec(rawArr);
                                             const depSec = parseOudTimeToSec(rawDep);
 
-                                            // 時刻逆転チェック (到着 > 出発)
                                             if (arrSec !== null && depSec !== null && arrSec > depSec) {
                                                 const stName = appData.stations[isReversed ? (totalStations - 1 - sIdx) : sIdx].name;
                                                 errors.push({
@@ -1294,7 +1292,6 @@
                                                     arrRaw: rawArr,
                                                     depRaw: rawDep
                                                 });
-                                                // 自動補正：出発時刻を到着時刻と同刻にする
                                                 rawDep = rawArr;
                                             }
 
@@ -1330,11 +1327,8 @@
                         processRessyaList(oudData.Nobori, true, '上り');
 
                         appData.trains = newTrains;
-
-                        // 読み込み完了後に「未反映」ステータスへ変更
                         markUnsaved();
 
-                        // エラー表示ハンドリング
                         if (errors.length > 0) {
                             const errContainer = document.getElementById('error-modal-list');
                             errContainer.innerHTML = '';
