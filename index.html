@@ -14,11 +14,15 @@
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     </script>
     <style>
+        * {
+            box-sizing: border-box;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             margin: 0;
             background: #f4f5f7;
             color: #333;
+            overflow-x: hidden; /* 横スクロール（はみ出し）防止 */
         }
         header {
             background: #2c3e50;
@@ -28,15 +32,20 @@
             justify-content: space-between;
             align-items: center;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            flex-wrap: wrap;
+            gap: 10px;
         }
         .header-title {
             font-size: 1.1rem;
             font-weight: bold;
+            white-space: nowrap;
         }
         .header-right {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
+            flex-wrap: wrap;
+            max-width: 100%;
         }
         #sync-status {
             font-size: 0.75rem;
@@ -45,6 +54,7 @@
             padding: 4px 8px;
             border-radius: 10px;
             font-weight: bold;
+            white-space: nowrap;
         }
         #sync-status.unsaved {
             background: #e67e22;
@@ -54,6 +64,7 @@
             background: rgba(0,0,0,0.25);
             padding: 4px 8px;
             border-radius: 4px;
+            white-space: nowrap;
         }
         .btn-push-firebase {
             background: #27ae60;
@@ -66,9 +77,15 @@
             font-size: 0.85rem;
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
             transition: background 0.2s;
+            white-space: nowrap;
         }
         .btn-push-firebase:hover {
             background: #2196f3;
+        }
+        .tab-buttons {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
         }
         .tab-buttons button {
             background: rgba(255,255,255,0.15);
@@ -79,6 +96,7 @@
             border-radius: 4px;
             font-size: 0.85rem;
             font-weight: bold;
+            white-space: nowrap;
         }
         .tab-buttons button.active {
             background: white;
@@ -87,6 +105,7 @@
         .screen {
             display: none;
             padding: 16px;
+            max-width: 100%;
         }
         .screen.active {
             display: block;
@@ -95,6 +114,7 @@
         /* アプリ風 縦型路線図スタイル */
         .app-container {
             max-width: 480px;
+            width: 100%;
             margin: 0 auto;
             background: #fff;
             min-height: 85vh;
@@ -102,10 +122,12 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
             padding: 20px 0;
             position: relative;
+            overflow: hidden; /* 内部コンテンツの要素はみ出し防止 */
         }
         .route-direction-header {
             text-align: center;
             margin-bottom: 15px;
+            padding: 0 10px;
         }
         .dir-badge {
             display: inline-block;
@@ -115,6 +137,10 @@
             border-radius: 12px;
             font-size: 0.85rem;
             font-weight: bold;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .vertical-route-wrapper {
@@ -156,7 +182,7 @@
             flex-direction: column;
             align-items: flex-end;
             position: relative;
-            box-sizing: border-box;
+            word-break: break-all;
         }
 
         .st-code {
@@ -171,9 +197,9 @@
             font-size: 0.6rem;
             font-weight: bold;
             margin-bottom: 2px;
-            box-sizing: border-box;
             letter-spacing: -0.5px;
             line-height: 1;
+            flex-shrink: 0;
         }
 
         .st-name {
@@ -181,6 +207,7 @@
             font-size: 1rem;
             line-height: 1.2;
             margin-bottom: 4px;
+            word-break: break-all;
         }
 
         /* 停車種別バッジ表示エリア */
@@ -189,7 +216,7 @@
             flex-wrap: wrap;
             gap: 3px;
             justify-content: flex-end;
-            max-width: 130px;
+            max-width: 100%;
             margin-bottom: 4px;
         }
         .stop-type-icon {
@@ -204,7 +231,7 @@
             align-items: center;
             justify-content: center;
             box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-            box-sizing: border-box;
+            white-space: nowrap;
         }
 
         /* 中央の駅ドット */
@@ -224,7 +251,6 @@
             width: 42%;
             padding-left: 15px;
             position: relative;
-            box-sizing: border-box;
         }
 
         /* 列車表示エリア（左側追加領域） */
@@ -235,6 +261,7 @@
             gap: 4px;
             margin-top: 4px;
             z-index: 10;
+            max-width: 100%;
         }
 
         .v-interval-row {
@@ -256,6 +283,9 @@
             font-weight: bold;
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
             white-space: nowrap;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
             z-index: 10;
         }
 
@@ -277,6 +307,7 @@
             max-width: 650px;
             margin-left: auto;
             margin-right: auto;
+            overflow: hidden;
         }
         .row-group {
             display: flex;
@@ -284,17 +315,20 @@
             margin-bottom: 8px;
             align-items: center;
             flex-wrap: wrap;
+            max-width: 100%;
         }
         input, select {
             padding: 6px;
             border: 1px solid #ccc;
             border-radius: 4px;
+            max-width: 100%;
         }
         input[type="color"] {
             padding: 2px;
             width: 40px;
             height: 32px;
             cursor: pointer;
+            flex-shrink: 0;
         }
         button.action-btn {
             background: #1e88e5;
@@ -304,6 +338,7 @@
             border-radius: 4px;
             cursor: pointer;
             font-weight: bold;
+            white-space: nowrap;
         }
         button.reset-btn {
             background: #e74c3c;
@@ -313,6 +348,7 @@
             border-radius: 4px;
             cursor: pointer;
             font-weight: bold;
+            white-space: nowrap;
         }
         .move-btn {
             background: #546e7a;
@@ -323,6 +359,7 @@
             cursor: pointer;
             font-size: 0.75rem;
             font-weight: bold;
+            white-space: nowrap;
         }
         .move-btn:disabled {
             background: #cfd8dc;
@@ -340,7 +377,7 @@
             min-width: 24px;
             height: 22px;
             text-align: center;
-            box-sizing: border-box;
+            flex-shrink: 0;
         }
 
         /* モーダル表示用スタイル */
@@ -353,6 +390,7 @@
             z-index: 999;
             justify-content: center;
             align-items: center;
+            padding: 10px;
         }
         .modal-overlay.active {
             display: flex;
@@ -362,11 +400,12 @@
             padding: 20px;
             border-radius: 8px;
             max-width: 420px;
-            width: 90%;
+            width: 100%;
             box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             text-align: center;
             max-height: 80vh;
             overflow-y: auto;
+            word-break: break-all;
         }
         .modal-btn-list {
             display: flex;
@@ -381,6 +420,7 @@
             font-weight: bold;
             cursor: pointer;
             color: white;
+            white-space: nowrap;
         }
         .btn-reset-dia { background: #f39c12; }
         .btn-reset-st { background: #e67e22; }
@@ -396,6 +436,7 @@
             margin-bottom: 8px;
             text-align: left;
             font-size: 0.8rem;
+            word-break: break-all;
         }
         .error-card .err-code {
             font-weight: bold;
@@ -948,7 +989,7 @@
                     const found = (train.schedule || []).find(sc => sc.stationIndex === sIdx) || { arr: '', dep: '', type: 'stop' };
                     schedHtml += `
                         <div class="row-group" style="font-size:0.85rem;">
-                            <span style="width:70px;">${escapeHtml(st.name)}</span>
+                            <span style="width:70px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(st.name)}</span>
                             着:<input type="text" value="${escapeHtml(found.arr || '')}" id="t-${tIdx}-s-${sIdx}-arr" style="width:80px;" placeholder="${placeholderText}">
                             発:<input type="text" value="${escapeHtml(found.dep || '')}" id="t-${tIdx}-s-${sIdx}-dep" style="width:80px;" placeholder="${placeholderText}">
                         </div>
@@ -963,12 +1004,12 @@
                 card.className = 'setting-card';
                 card.innerHTML = `
                     <div style="background:#f8f9fa; padding:10px; border-radius:6px; margin-bottom:10px;">
-                        <div style="font-size:1rem; font-weight:bold; margin-bottom:5px;">
+                        <div style="font-size:1rem; font-weight:bold; margin-bottom:5px; word-break:break-all;">
                             ${escapeHtml(train.type || '種別未設定')}
                             ${train.number ? ` ${escapeHtml(train.number)}` : ''}
                             ${train.destination ? ` → ${escapeHtml(train.destination)}` : ''}
                         </div>
-                        <div style="font-size:0.8rem; color:#666;">
+                        <div style="font-size:0.8rem; color:#666; word-break:break-all;">
                             ${train.direction === 'up' ? '上り' : '下り'} / ${escapeHtml(train.name || '')}
                         </div>
                     </div>
