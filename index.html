@@ -101,6 +101,7 @@
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
             padding: 20px 0;
+            position: relative;
         }
         .route-direction-header {
             text-align: center;
@@ -154,6 +155,8 @@
             display: flex;
             flex-direction: column;
             align-items: flex-end;
+            position: relative;
+            box-sizing: border-box;
         }
 
         .st-code {
@@ -213,12 +216,25 @@
             border-radius: 50%;
             z-index: 3;
             margin: 0 auto;
+            flex-shrink: 0;
         }
 
-        /* 列車表示エリア */
+        /* 列車表示エリア（右側） */
         .station-track-right {
             width: 42%;
             padding-left: 15px;
+            position: relative;
+            box-sizing: border-box;
+        }
+
+        /* 列車表示エリア（左側追加領域） */
+        .station-track-left-trains {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+            margin-top: 4px;
+            z-index: 10;
         }
 
         .v-interval-row {
@@ -239,9 +255,13 @@
             font-size: 0.75rem;
             font-weight: bold;
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            white-space: nowrap;
+            z-index: 10;
+        }
+
+        .v-interval-row .train-icon {
             position: absolute;
             transform: translateY(-50%);
-            white-space: nowrap;
         }
 
         .dir-arrow-down::after { content: " ▼"; font-size: 0.65rem; }
@@ -785,7 +805,7 @@
                 trainsAtStation.forEach(t => {
                     const bgColor = getTrainColor(t.trainType);
                     const dirClass = t.direction === 'down' ? 'dir-arrow-down' : 'dir-arrow-up';
-                    const html = `<div class="train-icon ${dirClass}" style="top:50%; background-color: ${bgColor};">${t.trainType} ${t.number || t.name}${t.destination ? ` → ${t.destination}` : ''}</div>`;
+                    const html = `<div class="train-icon ${dirClass}" style="background-color: ${bgColor};">${t.trainType} ${t.number || t.name}${t.destination ? ` → ${t.destination}` : ''}</div>`;
                     
                     const isLeft = (trackDir === 'up-left') ? (t.direction === 'up') : (t.direction === 'down');
                     if (isLeft) leftTrainHtml += html;
@@ -797,7 +817,7 @@
                         ${st.code ? `<div class="st-code">${st.code}</div>` : ''}
                         <div class="st-name">${st.name}</div>
                         ${stopTypeHtml}
-                        ${leftTrainHtml}
+                        ${leftTrainHtml ? `<div class="station-track-left-trains">${leftTrainHtml}</div>` : ''}
                     </div>
                     <div class="station-node"></div>
                     <div class="station-track-right">
@@ -826,8 +846,8 @@
                     });
 
                     intervalRow.innerHTML = `
-                        <div style="position:absolute; left:10%; width:35%; height:100%;">${leftBetweenHtml}</div>
-                        <div style="position:absolute; right:10%; width:35%; height:100%;">${rightBetweenHtml}</div>
+                        <div style="position:absolute; left:0; width:42%; height:100%; display:flex; justify-content:flex-end;">${leftBetweenHtml}</div>
+                        <div style="position:absolute; right:0; width:42%; height:100%; padding-left:15px; box-sizing:border-box;">${rightBetweenHtml}</div>
                     `;
                     wrapper.appendChild(intervalRow);
                 }
@@ -1189,33 +1209,24 @@
                     syncDiaInputsToMemory();
                 }
 
-                // 1. 全データをインデント付きのJSON文字列化
                 const jsonString = JSON.stringify(appData, null, 2);
-
-                // 2. Blob（バイナリ形式）を作成
                 const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8;' });
-
-                // 3. ダウンロード用の擬似URLを生成
                 const url = URL.createObjectURL(blob);
 
-                // 4. 今日の日付文字列を取得 (YYYYMMDD)
                 const now = new Date();
                 const dateStr = now.getFullYear() +
                     String(now.getMonth() + 1).padStart(2, '0') +
                     String(now.getDate()).padStart(2, '0');
 
-                // 路線名があればファイル名に利用
                 const routeName = (appData.name && appData.name.trim()) ? appData.name.trim() : 'railway_data';
                 const fileName = `${routeName}_${dateStr}.json`;
 
-                // 5. 擬似的に <a> 要素を作成してダウンロード実行
                 const link = document.createElement('a');
                 link.href = url;
                 link.download = fileName;
                 document.body.appendChild(link);
                 link.click();
 
-                // 6. メモリ解放処理
                 document.body.removeChild(link);
                 URL.revokeObjectURL(url);
             } catch (err) {
@@ -1479,8 +1490,7 @@
             };
         }
 
-        /* --- 【OuDia / OuDia2 (.oud / .oud2) 完全インポート】 --- */
-
+        /* --- 【OuDia / OuDia2 インポート処理】 --- */
         function parseOudTimeToSec(tStr) {
             if (!tStr) return null;
             let s = String(tStr).trim();
@@ -1673,7 +1683,6 @@
             const filename = file.name.toLowerCase();
             const reader = new FileReader();
 
-            // PDFファイルの読み込み処理分岐
             if (filename.endsWith('.pdf')) {
                 reader.onload = async function(e) {
                     try {
@@ -1703,7 +1712,6 @@
                 return;
             }
 
-            // OuDia / OuDia2 / JSON テキスト系の読み込み処理
             reader.onload = function(e) {
                 const arrayBuffer = e.target.result;
                 let text = '';
@@ -1717,7 +1725,6 @@
                     text = new TextDecoder('utf-8').decode(arrayBuffer);
                 }
 
-                // OuDia形式のデータが含まれているかチェック
                 if (text.includes('FileType=') || text.includes('Rosenmei=') || filename.endsWith('.oud') || filename.endsWith('.oud2')) {
                     try {
                         const oudData = parseOuDia2(text);
@@ -1892,7 +1899,6 @@
                     }
                 }
 
-                // OuDiaでない場合はJSONとして解析を試みる
                 try {
                     const parsedData = JSON.parse(text);
                     appData = parsedData;
