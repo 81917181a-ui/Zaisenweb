@@ -111,9 +111,9 @@
             display: block;
         }
 
-        /* アプリ風 縦型路線図スタイル */
+        /* アプリ風 縦型路線図スタイル（幅拡張・左寄り調整版） */
         .app-container {
-            max-width: 480px;
+            max-width: 960px; /* カード全体の幅を600pxから広範囲に拡張 */
             width: 100%;
             margin: 0 auto;
             background: #fff;
@@ -151,12 +151,12 @@
             align-items: center;
         }
 
-        /* 中央の路線縦ライン */
+        /* 路線縦ライン（中央から左35%へ移動） */
         .vertical-line {
             position: absolute;
             top: 20px;
             bottom: 20px;
-            left: 50%;
+            left: 35%; /* 左から35%の位置に配置 */
             width: 4px;
             background: #29b6f6;
             transform: translateX(-50%);
@@ -173,9 +173,9 @@
             margin-bottom: 5px;
         }
 
-        /* 駅情報（左側） */
+        /* 駅情報（左側エリア：35%のラインより左側） */
         .station-info-left {
-            width: 42%;
+            width: 30%;
             padding-right: 15px;
             text-align: right;
             display: flex;
@@ -234,23 +234,26 @@
             white-space: nowrap;
         }
 
-        /* 中央の駅ドット */
+        /* 縦ライン上の駅ドット（左から35%の位置） */
         .station-node {
+            position: absolute;
+            left: 35%;
+            transform: translateX(-50%);
             width: 12px;
             height: 12px;
             background: white;
             border: 3px solid #0288d1;
             border-radius: 50%;
             z-index: 3;
-            margin: 0 auto;
             flex-shrink: 0;
         }
 
-        /* 列車表示エリア（右側） */
+        /* 列車表示エリア（右側エリア：広々としたスペース確保） */
         .station-track-right {
-            width: 42%;
-            padding-left: 15px;
+            width: 65%;
+            padding-left: 25px;
             position: relative;
+            margin-left: auto;
         }
 
         /* 列車表示エリア（左側追加領域） */
@@ -887,8 +890,8 @@
                     });
 
                     intervalRow.innerHTML = `
-                        <div style="position:absolute; left:0; width:42%; height:100%; display:flex; justify-content:flex-end;">${leftBetweenHtml}</div>
-                        <div style="position:absolute; right:0; width:42%; height:100%; padding-left:15px; box-sizing:border-box;">${rightBetweenHtml}</div>
+                        <div style="position:absolute; left:0; width:30%; height:100%; display:flex; justify-content:flex-end;">${leftBetweenHtml}</div>
+                        <div style="position:absolute; right:0; width:65%; height:100%; padding-left:25px; box-sizing:border-box;">${rightBetweenHtml}</div>
                     `;
                     wrapper.appendChild(intervalRow);
                 }
@@ -908,12 +911,21 @@
                 const sched = t.schedule;
                 if (!sched || sched.length < 2) return;
 
-                const validSched = sched.filter(s => s.arr || s.dep);
-                if (validSched.length < 2) return;
+                // 列車自身が持つ方向（上り/下り）を正とする。
+                // ※ schedule配列の格納順（先頭/末尾のstationIndex比較）からは方向を再判定しない。
+                //   syncDiaInputsToMemory()等での保存時、schedule配列は駅Index昇順で
+                //   作り直されるため、上り列車では配列順＝時系列の逆順になり得る。
+                const direction = (t.direction === 'up' || t.isReversed) ? 'up' : 'down';
 
-                const firstIdx = validSched[0].stationIndex;
-                const lastIdx = validSched[validSched.length - 1].stationIndex;
-                const direction = firstIdx <= lastIdx ? 'down' : 'up';
+                // 在線（駅間）判定は「配列内で隣り合う要素」が時系列で連続している前提のため、
+                // 方向に応じて必ず時系列順（上り＝駅Index降順／下り＝駅Index昇順）に並べ直してから使う。
+                const validSched = sched
+                    .filter(s => s.arr || s.dep)
+                    .slice()
+                    .sort((a, b) => direction === 'up'
+                        ? b.stationIndex - a.stationIndex
+                        : a.stationIndex - b.stationIndex);
+                if (validSched.length < 2) return;
 
                 for (let i = 0; i < validSched.length; i++) {
                     const st = validSched[i];
@@ -923,7 +935,6 @@
                     const startAtSt = (arr !== -1) ? arr : dep;
                     const endAtSt = (dep !== -1) ? dep : arr;
 
-                    // 駅停車中の判定
                     if (startAtSt !== -1 && endAtSt !== -1 && currentSec >= startAtSt && currentSec <= endAtSt) {
                         results.push({
                             type: 'st',
@@ -936,7 +947,6 @@
                         });
                     }
 
-                    // 駅間走行中の判定
                     if (i < validSched.length - 1) {
                         const nextSt = validSched[i + 1];
                         const nextArr = timeToSec(nextSt.arr);
@@ -947,18 +957,13 @@
                             const elapsed = currentSec - curDep;
                             let ratio = totalSec > 0 ? (elapsed / totalSec) : 0.5;
 
-                            // 走行区間インデックス（上の駅）の特定と位置計算
                             let minIdx = Math.min(st.stationIndex, nextSt.stationIndex);
-                            // 下り（上→下）：ratio が増えると上（0%）から下（100%）へ移動
-                            // 上り（下→上）：ratio が増えると下（100%）から上（0%）へ移動
                             let progress = (direction === 'down') ? ratio : (1 - ratio);
 
                             results.push({
                                 type: 'between',
                                 index: minIdx,
                                 name: t.name || '',
-                                number: t.number || '',
-                                destination: t.destination || '',
                                 trainType: t.type || '',
                                 direction: direction,
                                 progress: progress
@@ -1056,7 +1061,12 @@
                 if (typeInput) train.type = typeInput.value;
 
                 const newSched = [];
-                appData.stations.forEach((_, sIdx) => {
+                // 上り列車は駅Index降順（＝時系列順）で走査し、schedule配列の格納順を
+                // 実際の走行順と一致させる（renderDiaForm()の入力欄表示順と揃える）。
+                const stationIndices = appData.stations.map((_, idx) => idx);
+                if (train.isReversed) stationIndices.reverse();
+
+                stationIndices.forEach(sIdx => {
                     const arrInput = document.getElementById(`t-${tIdx}-s-${sIdx}-arr`);
                     const depInput = document.getElementById(`t-${tIdx}-s-${sIdx}-dep`);
                     if (arrInput && depInput) {
