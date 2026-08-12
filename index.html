@@ -681,6 +681,15 @@
             </div>
 
             <div style="margin-top: 20px;">
+                <label style="font-weight: bold; display: block; margin-bottom: 8px;">列車情報画面 時刻表示設定:</label>
+                <p style="font-size: 0.8rem; color: #666; margin: 0 0 8px 0;">列車を選択した際に表示される「列車詳細」画面での、発車・到着時刻の表示形式を設定します。</p>
+                <select id="general-time-display" style="width: 100%; padding: 8px;">
+                    <option value="min">時分表示 (例: 12:00)</option>
+                    <option value="sec">時分秒表示 (例: 12:00:00)</option>
+                </select>
+            </div>
+
+            <div style="margin-top: 20px;">
                 <label style="font-weight: bold; display: block; margin-bottom: 8px;">列車情報 編集用パスワード:</label>
                 <p style="font-size: 0.8rem; color: #666; margin: 0 0 8px 0;">列車詳細画面の「編集」を押した際に要求されます。空欄の場合はパスワードなしで編集できます。</p>
                 <input type="password" id="general-edit-password" style="width: 100%; padding: 8px; box-sizing: border-box;" placeholder="パスワードを設定する場合は入力">
@@ -823,7 +832,8 @@
             trains: [],
             general: {
                 trackDir: "up-left",
-                timeUnit: "sec"
+                timeUnit: "sec",
+                timeDisplayFormat: "sec"
             }
         };
 
@@ -837,7 +847,8 @@
                 if (!appData.types) appData.types = [];
                 if (!appData.stations) appData.stations = [];
                 if (!appData.trains) appData.trains = [];
-                if (!appData.general) appData.general = { trackDir: "up-left", timeUnit: "sec" };
+                if (!appData.general) appData.general = { trackDir: "up-left", timeUnit: "sec", timeDisplayFormat: "sec" };
+                if (!appData.general.timeDisplayFormat) appData.general.timeDisplayFormat = "sec";
             }
             markSaved();
             renderZaisen();
@@ -936,10 +947,12 @@
         function renderGeneralForm() {
             const trackSelect = document.getElementById('general-track-dir');
             const unitSelect = document.getElementById('general-time-unit');
+            const displaySelect = document.getElementById('general-time-display');
             const pwInput = document.getElementById('general-edit-password');
             if (appData.general) {
                 if (appData.general.trackDir) trackSelect.value = appData.general.trackDir;
                 if (appData.general.timeUnit) unitSelect.value = appData.general.timeUnit;
+                displaySelect.value = appData.general.timeDisplayFormat || 'sec';
                 pwInput.value = appData.general.editPassword || '';
             }
         }
@@ -948,6 +961,7 @@
             if (!appData.general) appData.general = {};
             appData.general.trackDir = document.getElementById('general-track-dir').value;
             appData.general.timeUnit = document.getElementById('general-time-unit').value;
+            appData.general.timeDisplayFormat = document.getElementById('general-time-display').value;
             appData.general.editPassword = document.getElementById('general-edit-password').value;
             markUnsaved();
             alert('一般設定を保存しました（※「全員反映」を押すと全員へ反映されます）');
@@ -1515,6 +1529,21 @@
             document.getElementById('train-detail-modal').classList.add('active');
         }
 
+        // 時刻表示形式（一般設定）に応じて "HH:MM:SS" / "HH:MM" 形式の文字列を整形する
+        function formatTimeForDisplay(timeStr) {
+            if (!timeStr) return timeStr;
+            const displayFormat = (appData.general && appData.general.timeDisplayFormat) ? appData.general.timeDisplayFormat : 'sec';
+            const parts = timeStr.trim().split(':');
+            if (parts.length < 2) return timeStr;
+            const h = parts[0];
+            const m = parts[1];
+            const s = parts.length >= 3 ? parts[2] : '00';
+            if (displayFormat === 'min') {
+                return `${h}:${m}`;
+            }
+            return `${h}:${m}:${s}`;
+        }
+
         function buildStopRowsHtml(train) {
             const isReversed = !!train.isReversed;
             let stationOrder = appData.stations.map((st, idx) => ({ station: st, originalIndex: idx }));
@@ -1525,8 +1554,8 @@
                 const sc = (train.schedule || []).find(s => s.stationIndex === item.originalIndex);
                 if (!sc) return; // 通過も停車もしない駅は表示しない
                 const isPass = sc.type === 'pass';
-                const arrText = isPass ? 'レ' : (sc.arr || '-');
-                const depText = isPass ? '' : (sc.dep || '-');
+                const arrText = isPass ? 'レ' : (sc.arr ? formatTimeForDisplay(sc.arr) : '-');
+                const depText = isPass ? '' : (sc.dep ? formatTimeForDisplay(sc.dep) : '-');
                 rows += `
                     <tr>
                         <td>${escapeHtml(item.station.name)}</td>
@@ -1670,7 +1699,7 @@
                 }
             } else if (type === 'all') {
                 if (confirm('本当にすべての情報を全消去しますか？')) {
-                    appData = { name: "", types: [], stations: [], trains: [], general: { trackDir: "up-left", timeUnit: "sec" } };
+                    appData = { name: "", types: [], stations: [], trains: [], general: { trackDir: "up-left", timeUnit: "sec", timeDisplayFormat: "sec" } };
                     markUnsaved();
                     alert('全データをクリアしました（※「全員反映」を押すと反映されます）');
                 }
@@ -1967,7 +1996,7 @@
                 types: types,
                 stations: station_order.map(n => ({ name: n, code: '', stopTypes: '' })),
                 trains: trains,
-                general: { trackDir: 'up-left', timeUnit: 'sec' }
+                general: { trackDir: 'up-left', timeUnit: 'sec', timeDisplayFormat: 'sec' }
             };
         }
 
@@ -2173,7 +2202,7 @@
                         if (!appData.types) appData.types = [];
                         if (!appData.stations) appData.stations = [];
                         if (!appData.trains) appData.trains = [];
-                        if (!appData.general) appData.general = { trackDir: 'up-left', timeUnit: 'sec' };
+                        if (!appData.general) appData.general = { trackDir: 'up-left', timeUnit: 'sec', timeDisplayFormat: 'sec' };
 
                         markUnsaved();
                         renderSettingForm();
@@ -2386,7 +2415,7 @@
                     if (!appData.types) appData.types = [];
                     if (!appData.stations) appData.stations = [];
                     if (!appData.trains) appData.trains = [];
-                    if (!appData.general) appData.general = { trackDir: 'up-left', timeUnit: 'sec' };
+                    if (!appData.general) appData.general = { trackDir: 'up-left', timeUnit: 'sec', timeDisplayFormat: 'sec' };
                     markUnsaved();
                     renderSettingForm();
                     renderTypeForm();
