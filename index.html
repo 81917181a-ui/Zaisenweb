@@ -324,6 +324,14 @@
             overflow: hidden;
             text-overflow: ellipsis;
             z-index: 10;
+            cursor: pointer;
+        }
+
+        .train-delay-badge {
+            display: inline-block;
+            margin-left: 4px;
+            color: #ffe082;
+            font-size: 0.7rem;
         }
 
         .v-interval-row .train-icon {
@@ -464,6 +472,93 @@
         .btn-reset-all { background: #c0392b; }
         .btn-cancel { background: #95a5a6; }
 
+        /* 列車詳細・編集モーダル */
+        .train-detail-content {
+            max-width: 480px;
+            padding: 0;
+            text-align: left;
+        }
+        .train-detail-header {
+            background: #1565c0;
+            color: white;
+            padding: 14px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 8px 8px 0 0;
+        }
+        .train-detail-header-icons {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .td-icon-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .td-close-btn {
+            font-size: 1.1rem;
+            padding: 3px 10px;
+        }
+        .train-detail-body {
+            padding: 16px;
+        }
+        .td-type-name {
+            font-size: 1.3rem;
+            font-weight: bold;
+        }
+        .td-type-underline {
+            height: 5px;
+            border-radius: 3px;
+            margin: 6px 0 14px 0;
+            background: #78909c;
+        }
+        .td-dest-row {
+            font-size: 1.4rem;
+            font-weight: bold;
+            margin-bottom: 6px;
+            word-break: break-all;
+        }
+        .td-status-row {
+            font-size: 0.9rem;
+            font-weight: bold;
+            margin-bottom: 14px;
+        }
+        .td-status-normal { color: #2e7d32; }
+        .td-status-delay { color: #c0392b; }
+        .td-stop-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        .td-stop-table th {
+            background: #1565c0;
+            color: white;
+            padding: 8px 6px;
+            text-align: center;
+            font-size: 0.8rem;
+        }
+        .td-stop-table td {
+            padding: 8px 6px;
+            text-align: center;
+            border-bottom: 1px solid #eee;
+        }
+        .te-arr, .te-dep {
+            width: 70px;
+            padding: 4px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
         /* エラーカード表示スタイル */
         .error-card {
             background-color: #fff0f0;
@@ -585,6 +680,13 @@
                 </select>
             </div>
 
+            <div style="margin-top: 20px;">
+                <label style="font-weight: bold; display: block; margin-bottom: 8px;">列車情報 編集用パスワード:</label>
+                <p style="font-size: 0.8rem; color: #666; margin: 0 0 8px 0;">列車詳細画面の「編集」を押した際に要求されます。空欄の場合はパスワードなしで編集できます。</p>
+                <input type="password" id="general-edit-password" style="width: 100%; padding: 8px; box-sizing: border-box;" placeholder="パスワードを設定する場合は入力">
+                <button class="modal-btn btn-cancel" style="margin-top: 8px; width: 100%;" onclick="resetEditPassword()">パスワードリセット（未設定に戻す）</button>
+            </div>
+
             <button class="action-btn" style="background: #2e7d32; margin-top: 20px;" onclick="saveGeneralSettings()">ローカル保存</button>
         </div>
     </div>
@@ -611,6 +713,88 @@
             <div id="error-modal-list"></div>
             <div class="modal-btn-list">
                 <button class="modal-btn btn-cancel" onclick="closeErrorModal()">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 列車詳細モーダル -->
+    <div id="train-detail-modal" class="modal-overlay">
+        <div class="modal-content train-detail-content">
+            <div class="train-detail-header">
+                <span>列車詳細</span>
+                <div class="train-detail-header-icons">
+                    <button class="td-icon-btn" onclick="checkEditPasswordAndOpen()" title="情報編集">✎ 編集</button>
+                    <button class="td-icon-btn td-close-btn" onclick="closeTrainDetailModal()">×</button>
+                </div>
+            </div>
+            <div class="train-detail-body">
+                <div class="td-type-line">
+                    <span id="td-type-name" class="td-type-name"></span>
+                </div>
+                <div id="td-type-underline" class="td-type-underline"></div>
+
+                <div class="td-dest-row">
+                    <span id="td-destination" class="td-destination"></span>
+                </div>
+                <div id="td-status-row" class="td-status-row"></div>
+
+                <table class="td-stop-table">
+                    <thead>
+                        <tr><th>停車駅</th><th>到着時刻</th><th>発車時刻</th></tr>
+                    </thead>
+                    <tbody id="td-stop-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 編集用パスワード確認モーダル -->
+    <div id="train-password-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 style="margin-top:0;">パスワード確認</h3>
+            <p style="font-size: 0.85rem; color: #666;">編集するにはパスワードを入力してください。</p>
+            <input type="password" id="train-password-input" style="width:100%; padding:10px; font-size:1rem; box-sizing:border-box;" placeholder="パスワード" onkeydown="if(event.key==='Enter') submitTrainPassword();">
+            <div class="modal-btn-list">
+                <button class="modal-btn" style="background:#2e7d32;" onclick="submitTrainPassword()">確認</button>
+                <button class="modal-btn btn-cancel" onclick="closeTrainPasswordModal()">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 列車編集モーダル -->
+    <div id="train-edit-modal" class="modal-overlay">
+        <div class="modal-content train-detail-content">
+            <div class="train-detail-header">
+                <span>列車情報編集</span>
+                <div class="train-detail-header-icons">
+                    <button class="td-icon-btn td-close-btn" onclick="closeTrainEditModal()">×</button>
+                </div>
+            </div>
+            <div class="train-detail-body" style="text-align:left;">
+                <div class="row-group">
+                    <label style="font-weight:bold; width:70px;">種別:</label>
+                    <select id="te-type-select" style="flex:1; padding:6px;"></select>
+                </div>
+                <div class="row-group">
+                    <label style="font-weight:bold; width:70px;">行き先:</label>
+                    <input type="text" id="te-destination" style="flex:1; padding:6px;" placeholder="行き先">
+                </div>
+                <div class="row-group">
+                    <label style="font-weight:bold; width:70px;">遅れ:</label>
+                    <input type="number" id="te-delay" style="width:80px; padding:6px;" placeholder="0">
+                    <span style="font-size:0.85rem; color:#666;">分（0で平常運転）</span>
+                </div>
+
+                <table class="td-stop-table" style="margin-top:15px;">
+                    <thead>
+                        <tr><th>停車駅</th><th>到着</th><th>発車</th><th>扱い</th></tr>
+                    </thead>
+                    <tbody id="te-stop-tbody"></tbody>
+                </table>
+            </div>
+            <div class="modal-btn-list">
+                <button class="modal-btn" style="background:#2e7d32;" onclick="saveTrainEdit()">保存</button>
+                <button class="modal-btn btn-cancel" onclick="closeTrainEditModal()">キャンセル</button>
             </div>
         </div>
     </div>
@@ -752,9 +936,11 @@
         function renderGeneralForm() {
             const trackSelect = document.getElementById('general-track-dir');
             const unitSelect = document.getElementById('general-time-unit');
+            const pwInput = document.getElementById('general-edit-password');
             if (appData.general) {
                 if (appData.general.trackDir) trackSelect.value = appData.general.trackDir;
                 if (appData.general.timeUnit) unitSelect.value = appData.general.timeUnit;
+                pwInput.value = appData.general.editPassword || '';
             }
         }
 
@@ -762,9 +948,19 @@
             if (!appData.general) appData.general = {};
             appData.general.trackDir = document.getElementById('general-track-dir').value;
             appData.general.timeUnit = document.getElementById('general-time-unit').value;
+            appData.general.editPassword = document.getElementById('general-edit-password').value;
             markUnsaved();
             alert('一般設定を保存しました（※「全員反映」を押すと全員へ反映されます）');
             switchScreen('zaisen');
+        }
+
+        function resetEditPassword() {
+            if (!confirm('編集用パスワードを未設定（パスワードなし）に戻しますか？')) return;
+            if (!appData.general) appData.general = {};
+            appData.general.editPassword = '';
+            document.getElementById('general-edit-password').value = '';
+            markUnsaved();
+            alert('パスワードをリセットしました（※「全員反映」を押すと全員へ反映されます）');
         }
 
         /* --- 【種別設定】 --- */
@@ -899,7 +1095,8 @@
                 trainsAtStation.forEach(t => {
                     const bgColor = getTrainColor(t.trainType);
                     const dirClass = t.direction === 'down' ? 'dir-arrow-down' : 'dir-arrow-up';
-                    const html = `<div class="train-icon ${dirClass}" style="background-color: ${bgColor};">${t.trainType} ${t.number || t.name}${t.destination ? ` → ${t.destination}` : ''}</div>`;
+                    const delayBadge = t.delay ? `<span class="train-delay-badge">+${t.delay}</span>` : '';
+                    const html = `<div class="train-icon ${dirClass}" style="background-color: ${bgColor};" onclick="openTrainDetail(${t.trainIndex})">${t.trainType} ${t.number || t.name}${t.destination ? ` → ${t.destination}` : ''}${delayBadge}</div>`;
                     
                     const isLeft = (trackDir === 'up-left') ? (t.direction === 'up') : (t.direction === 'down');
                     if (isLeft) leftTrainHtml += html;
@@ -932,7 +1129,8 @@
                         const bgColor = getTrainColor(t.trainType);
                         const dirClass = t.direction === 'down' ? 'dir-arrow-down' : 'dir-arrow-up';
                         const topPercent = Math.max(10, Math.min(90, t.progress * 100));
-                        const html = `<div class="train-icon ${dirClass}" style="top:${topPercent}%; background-color: ${bgColor};">${t.trainType} ${t.number || t.name}${t.destination ? ` → ${t.destination}` : ''}</div>`;
+                        const delayBadge = t.delay ? `<span class="train-delay-badge">+${t.delay}</span>` : '';
+                        const html = `<div class="train-icon ${dirClass}" style="top:${topPercent}%; background-color: ${bgColor};" onclick="openTrainDetail(${t.trainIndex})">${t.trainType} ${t.number || t.name}${t.destination ? ` → ${t.destination}` : ''}${delayBadge}</div>`;
                         
                         const isLeft = (trackDir === 'up-left') ? (t.direction === 'up') : (t.direction === 'down');
                         if (isLeft) leftBetweenHtml += html;
@@ -957,14 +1155,22 @@
         function getCalculatedTrainPositions(currentSec) {
             const results = [];
 
-            appData.trains.forEach(t => {
+            appData.trains.forEach((t, tIdx) => {
                 const sched = t.schedule;
                 if (!sched || sched.length < 2) return;
 
+                // 遅れ（分）を考慮した実効時刻。遅れがある列車は、その分だけ手前の時刻表状態として扱う。
+                const delayMin = t.delay || 0;
+                const effectiveSec = currentSec - (delayMin * 60);
+
                 // 列車自身が持つ方向（上り/下り）を正とする。
+                // ※ schedule配列の格納順（先頭/末尾のstationIndex比較）からは方向を再判定しない。
+                //   syncDiaInputsToMemory()等での保存時、schedule配列は駅Index昇順で
+                //   作り直されるため、上り列車では配列順＝時系列の逆順になり得る。
                 const direction = (t.direction === 'up' || t.isReversed) ? 'up' : 'down';
 
-                // 方向に応じて必ず時系列順に並べ直してから使う。
+                // 在線（駅間）判定は「配列内で隣り合う要素」が時系列で連続している前提のため、
+                // 方向に応じて必ず時系列順（上り＝駅Index降順／下り＝駅Index昇順）に並べ直してから使う。
                 const validSched = sched
                     .filter(s => s.arr || s.dep)
                     .slice()
@@ -981,15 +1187,17 @@
                     const startAtSt = (arr !== -1) ? arr : dep;
                     const endAtSt = (dep !== -1) ? dep : arr;
 
-                    if (startAtSt !== -1 && endAtSt !== -1 && currentSec >= startAtSt && currentSec <= endAtSt) {
+                    if (startAtSt !== -1 && endAtSt !== -1 && effectiveSec >= startAtSt && effectiveSec <= endAtSt) {
                         results.push({
                             type: 'st',
                             index: st.stationIndex,
+                            trainIndex: tIdx,
                             name: t.name || '',
                             number: t.number || '',
                             destination: t.destination || '',
                             trainType: t.type || '',
-                            direction: direction
+                            direction: direction,
+                            delay: delayMin
                         });
                     }
 
@@ -998,9 +1206,9 @@
                         const nextArr = timeToSec(nextSt.arr);
                         const curDep = endAtSt;
 
-                        if (curDep !== -1 && nextArr !== -1 && currentSec >= curDep && currentSec < nextArr) {
+                        if (curDep !== -1 && nextArr !== -1 && effectiveSec >= curDep && effectiveSec < nextArr) {
                             const totalSec = nextArr - curDep;
-                            const elapsed = currentSec - curDep;
+                            const elapsed = effectiveSec - curDep;
                             let ratio = totalSec > 0 ? (elapsed / totalSec) : 0.5;
 
                             let minIdx = Math.min(st.stationIndex, nextSt.stationIndex);
@@ -1009,9 +1217,11 @@
                             results.push({
                                 type: 'between',
                                 index: minIdx,
+                                trainIndex: tIdx,
                                 name: t.name || '',
                                 trainType: t.type || '',
                                 direction: direction,
+                                delay: delayMin,
                                 progress: progress
                             });
                         }
@@ -1107,6 +1317,8 @@
                 if (typeInput) train.type = typeInput.value;
 
                 const newSched = [];
+                // 上り列車は駅Index降順（＝時系列順）で走査し、schedule配列の格納順を
+                // 実際の走行順と一致させる（renderDiaForm()の入力欄表示順と揃える）。
                 const stationIndices = appData.stations.map((_, idx) => idx);
                 if (train.isReversed) stationIndices.reverse();
 
@@ -1142,6 +1354,7 @@
                 type: defaultType,
                 direction: 'down',
                 isReversed: false,
+                delay: 0,
                 schedule: appData.stations.map((_, idx) => ({ stationIndex: idx, arr: '', dep: '', type: 'stop' }))
             });
             renderDiaForm();
@@ -1210,10 +1423,12 @@
             const targetIdx = idx + direction;
             if (targetIdx < 0 || targetIdx >= appData.stations.length) return;
 
+            // 駅配列要素の入れ替え
             const tempSt = appData.stations[idx];
             appData.stations[idx] = appData.stations[targetIdx];
             appData.stations[targetIdx] = tempSt;
 
+            // ダイヤ側の駅インデックス参照(stationIndex)もあわせて追従変更
             appData.trains.forEach(train => {
                 if (!train.schedule) return;
                 train.schedule.forEach(sc => {
@@ -1238,6 +1453,7 @@
             syncRouteInputsToMemory();
             appData.stations.splice(idx, 1);
             
+            // 削除された駅以降のインデックス調整
             appData.trains.forEach(train => {
                 if (!train.schedule) return;
                 train.schedule = train.schedule.filter(sc => sc.stationIndex !== idx).map(sc => {
@@ -1271,6 +1487,172 @@
             document.getElementById('error-modal').classList.remove('active');
         }
 
+        /* --- 【列車詳細モーダル】 --- */
+        let currentDetailTrainIndex = null;
+
+        function openTrainDetail(trainIndex) {
+            const train = appData.trains[trainIndex];
+            if (!train) return;
+            currentDetailTrainIndex = trainIndex;
+
+            const typeObj = appData.types.find(tp => tp.name === train.type);
+            const typeColor = typeObj ? typeObj.color : '#78909c';
+
+            document.getElementById('td-type-name').innerText = train.type || '種別未設定';
+            document.getElementById('td-type-underline').style.background = typeColor;
+            document.getElementById('td-destination').innerText = train.destination ? `${train.destination}行き` : '行き先未設定';
+
+            const statusRow = document.getElementById('td-status-row');
+            const delayMin = train.delay || 0;
+            if (delayMin > 0) {
+                statusRow.innerHTML = `<span class="td-status-delay">+${delayMin}分遅れ</span>`;
+            } else {
+                statusRow.innerHTML = `<span class="td-status-normal">平常運転</span>`;
+            }
+
+            document.getElementById('td-stop-tbody').innerHTML = buildStopRowsHtml(train);
+
+            document.getElementById('train-detail-modal').classList.add('active');
+        }
+
+        function buildStopRowsHtml(train) {
+            const isReversed = !!train.isReversed;
+            let stationOrder = appData.stations.map((st, idx) => ({ station: st, originalIndex: idx }));
+            if (isReversed) stationOrder.reverse();
+
+            let rows = '';
+            stationOrder.forEach(item => {
+                const sc = (train.schedule || []).find(s => s.stationIndex === item.originalIndex);
+                if (!sc) return; // 通過も停車もしない駅は表示しない
+                const isPass = sc.type === 'pass';
+                const arrText = isPass ? 'レ' : (sc.arr || '-');
+                const depText = isPass ? '' : (sc.dep || '-');
+                rows += `
+                    <tr>
+                        <td>${escapeHtml(item.station.name)}</td>
+                        <td>${escapeHtml(arrText)}</td>
+                        <td>${escapeHtml(depText)}</td>
+                    </tr>
+                `;
+            });
+            return rows;
+        }
+
+        function closeTrainDetailModal() {
+            document.getElementById('train-detail-modal').classList.remove('active');
+        }
+
+        /* --- 【編集用パスワード確認】 --- */
+        function checkEditPasswordAndOpen() {
+            const pw = (appData.general && appData.general.editPassword) ? appData.general.editPassword : '';
+            if (!pw) {
+                openTrainEditModal(currentDetailTrainIndex);
+                return;
+            }
+            document.getElementById('train-password-input').value = '';
+            document.getElementById('train-password-modal').classList.add('active');
+        }
+
+        function closeTrainPasswordModal() {
+            document.getElementById('train-password-modal').classList.remove('active');
+        }
+
+        function submitTrainPassword() {
+            const pw = (appData.general && appData.general.editPassword) ? appData.general.editPassword : '';
+            const input = document.getElementById('train-password-input').value;
+            if (input === pw) {
+                closeTrainPasswordModal();
+                openTrainEditModal(currentDetailTrainIndex);
+            } else {
+                alert('パスワードが違います。');
+            }
+        }
+
+        /* --- 【列車編集モーダル】 --- */
+        function openTrainEditModal(trainIndex) {
+            const train = appData.trains[trainIndex];
+            if (!train) return;
+            currentDetailTrainIndex = trainIndex;
+
+            closeTrainDetailModal();
+
+            const typeSelect = document.getElementById('te-type-select');
+            typeSelect.innerHTML = appData.types.map(tp =>
+                `<option value="${escapeHtml(tp.name)}" ${train.type === tp.name ? 'selected' : ''}>${escapeHtml(tp.name)}</option>`
+            ).join('') || '<option value="">(種別未設定)</option>';
+
+            document.getElementById('te-destination').value = train.destination || '';
+            document.getElementById('te-delay').value = train.delay || 0;
+
+            const isReversed = !!train.isReversed;
+            let stationOrder = appData.stations.map((st, idx) => ({ station: st, originalIndex: idx }));
+            if (isReversed) stationOrder.reverse();
+
+            document.getElementById('te-stop-tbody').innerHTML = stationOrder.map(item => {
+                const sIdx = item.originalIndex;
+                const found = (train.schedule || []).find(sc => sc.stationIndex === sIdx);
+                const arr = found ? (found.arr || '') : '';
+                const dep = found ? (found.dep || '') : '';
+                const statusVal = found ? (found.type === 'pass' ? 'pass' : 'stop') : 'none';
+                return `
+                    <tr>
+                        <td>${escapeHtml(item.station.name)}</td>
+                        <td><input type="text" class="te-arr" data-sidx="${sIdx}" value="${escapeHtml(arr)}" placeholder="09:00"></td>
+                        <td><input type="text" class="te-dep" data-sidx="${sIdx}" value="${escapeHtml(dep)}" placeholder="09:00"></td>
+                        <td>
+                            <select class="te-status" data-sidx="${sIdx}">
+                                <option value="none" ${statusVal === 'none' ? 'selected' : ''}>ー</option>
+                                <option value="stop" ${statusVal === 'stop' ? 'selected' : ''}>停車</option>
+                                <option value="pass" ${statusVal === 'pass' ? 'selected' : ''}>通過</option>
+                            </select>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            document.getElementById('train-edit-modal').classList.add('active');
+        }
+
+        function closeTrainEditModal() {
+            document.getElementById('train-edit-modal').classList.remove('active');
+        }
+
+        function saveTrainEdit() {
+            const train = appData.trains[currentDetailTrainIndex];
+            if (!train) return;
+
+            train.type = document.getElementById('te-type-select').value;
+            train.destination = document.getElementById('te-destination').value.trim();
+            train.delay = parseInt(document.getElementById('te-delay').value, 10) || 0;
+
+            const newSched = [];
+            document.querySelectorAll('#te-stop-tbody tr').forEach(tr => {
+                const arrInput = tr.querySelector('.te-arr');
+                const depInput = tr.querySelector('.te-dep');
+                const statusSelect = tr.querySelector('.te-status');
+                const sIdx = parseInt(arrInput.dataset.sidx, 10);
+                const status = statusSelect.value;
+                const arrVal = arrInput.value.trim();
+                const depVal = depInput.value.trim();
+                if (status !== 'none' && (arrVal || depVal)) {
+                    newSched.push({
+                        stationIndex: sIdx,
+                        arr: arrVal,
+                        dep: depVal,
+                        type: status === 'pass' ? 'pass' : 'stop'
+                    });
+                }
+            });
+            // 時系列順（方向に応じて）に並べ直してから保存する
+            newSched.sort((a, b) => train.isReversed ? b.stationIndex - a.stationIndex : a.stationIndex - b.stationIndex);
+            train.schedule = newSched;
+
+            markUnsaved();
+            closeTrainEditModal();
+            renderZaisen();
+            openTrainDetail(currentDetailTrainIndex);
+        }
+
         function executeReset(type) {
             if (type === 'dia') {
                 if (confirm('ダイヤ設定（全列車データ）を消去しますか？')) {
@@ -1299,6 +1681,7 @@
         /* --- 【JSONデータエクスポート（保存）処理】 --- */
         function exportJSON() {
             try {
+                // 入力中の未確定フォームデータがあればメモリに同期
                 if (document.getElementById('screen-setting').classList.contains('active')) {
                     syncRouteInputsToMemory();
                 } else if (document.getElementById('screen-type').classList.contains('active')) {
