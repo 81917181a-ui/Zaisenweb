@@ -143,6 +143,40 @@
             white-space: nowrap;
         }
 
+        /* 上り/下り 凡例（路線図の一番上に1回だけ表示） */
+        .direction-legend {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            padding: 0 0 12px 0;
+        }
+        .direction-legend-left {
+            width: 30%;
+            padding-right: 15px;
+            text-align: right;
+        }
+        .direction-legend-center {
+            width: 12px;
+            flex-shrink: 0;
+        }
+        .direction-legend-right {
+            width: 65%;
+            padding-left: 25px;
+            box-sizing: border-box;
+            text-align: left;
+        }
+        .direction-legend-label {
+            display: inline-block;
+            font-size: 0.7rem;
+            font-weight: bold;
+            color: #546e7a;
+            background: #eceff1;
+            border: 1px solid #cfd8dc;
+            padding: 3px 10px;
+            border-radius: 10px;
+            white-space: nowrap;
+        }
+
         .vertical-route-wrapper {
             position: relative;
             width: 100%;
@@ -471,7 +505,13 @@
             <div class="route-direction-header">
                 <span class="dir-badge" id="display-route-title">（路線名未設定）</span>
             </div>
-            
+
+            <div class="direction-legend" id="direction-legend">
+                <div class="direction-legend-left" id="direction-legend-left"></div>
+                <div class="direction-legend-center"></div>
+                <div class="direction-legend-right" id="direction-legend-right"></div>
+            </div>
+
             <div class="vertical-route-wrapper" id="vertical-route-view">
                 <div class="vertical-line"></div>
             </div>
@@ -816,12 +856,22 @@
             const currentSec = getCurrentTimeSec();
             const trainPositions = getCalculatedTrainPositions(currentSec);
 
+            const trackDir = (appData.general && appData.general.trackDir) ? appData.general.trackDir : "up-left";
+
+            // 上り/下り 凡例（路線図の一番上に1回だけ表示。左右どちらが上り/下りかは一般設定のtrackDirに連動）
+            const legendLeftEl = document.getElementById('direction-legend-left');
+            const legendRightEl = document.getElementById('direction-legend-right');
+            if (legendLeftEl && legendRightEl) {
+                const upLabelHtml = '<span class="direction-legend-label">▲ 上り</span>';
+                const downLabelHtml = '<span class="direction-legend-label">▼ 下り</span>';
+                legendLeftEl.innerHTML = (trackDir === 'up-left') ? upLabelHtml : downLabelHtml;
+                legendRightEl.innerHTML = (trackDir === 'up-left') ? downLabelHtml : upLabelHtml;
+            }
+
             if (!appData.stations || appData.stations.length === 0) {
                 wrapper.innerHTML = '<p style="text-align:center; color:#888; padding:20px;">駅が登録されていません。<br>「一般設定」で PDF / .oud2 / JSON ファイルをインポートするか、「路線設定」から駅を追加してください。</p>';
                 return;
             }
-
-            const trackDir = (appData.general && appData.general.trackDir) ? appData.general.trackDir : "up-left";
 
             appData.stations.forEach((st, idx) => {
                 const stRow = document.createElement('div');
@@ -912,13 +962,9 @@
                 if (!sched || sched.length < 2) return;
 
                 // 列車自身が持つ方向（上り/下り）を正とする。
-                // ※ schedule配列の格納順（先頭/末尾のstationIndex比較）からは方向を再判定しない。
-                //   syncDiaInputsToMemory()等での保存時、schedule配列は駅Index昇順で
-                //   作り直されるため、上り列車では配列順＝時系列の逆順になり得る。
                 const direction = (t.direction === 'up' || t.isReversed) ? 'up' : 'down';
 
-                // 在線（駅間）判定は「配列内で隣り合う要素」が時系列で連続している前提のため、
-                // 方向に応じて必ず時系列順（上り＝駅Index降順／下り＝駅Index昇順）に並べ直してから使う。
+                // 方向に応じて必ず時系列順に並べ直してから使う。
                 const validSched = sched
                     .filter(s => s.arr || s.dep)
                     .slice()
@@ -1061,8 +1107,6 @@
                 if (typeInput) train.type = typeInput.value;
 
                 const newSched = [];
-                // 上り列車は駅Index降順（＝時系列順）で走査し、schedule配列の格納順を
-                // 実際の走行順と一致させる（renderDiaForm()の入力欄表示順と揃える）。
                 const stationIndices = appData.stations.map((_, idx) => idx);
                 if (train.isReversed) stationIndices.reverse();
 
@@ -1166,12 +1210,10 @@
             const targetIdx = idx + direction;
             if (targetIdx < 0 || targetIdx >= appData.stations.length) return;
 
-            // 駅配列要素の入れ替え
             const tempSt = appData.stations[idx];
             appData.stations[idx] = appData.stations[targetIdx];
             appData.stations[targetIdx] = tempSt;
 
-            // ダイヤ側の駅インデックス参照(stationIndex)もあわせて追従変更
             appData.trains.forEach(train => {
                 if (!train.schedule) return;
                 train.schedule.forEach(sc => {
@@ -1196,7 +1238,6 @@
             syncRouteInputsToMemory();
             appData.stations.splice(idx, 1);
             
-            // 削除された駅以降のインデックス調整
             appData.trains.forEach(train => {
                 if (!train.schedule) return;
                 train.schedule = train.schedule.filter(sc => sc.stationIndex !== idx).map(sc => {
@@ -1258,7 +1299,6 @@
         /* --- 【JSONデータエクスポート（保存）処理】 --- */
         function exportJSON() {
             try {
-                // 入力中の未確定フォームデータがあればメモリに同期
                 if (document.getElementById('screen-setting').classList.contains('active')) {
                     syncRouteInputsToMemory();
                 } else if (document.getElementById('screen-type').classList.contains('active')) {
