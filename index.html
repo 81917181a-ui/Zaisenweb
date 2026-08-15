@@ -304,8 +304,30 @@
         .v-interval-row {
             position: relative;
             width: 100%;
-            height: 50px;
+            min-height: 50px;
             z-index: 2;
+            display: flex;
+            align-items: center;
+        }
+        .interval-side-left {
+            width: 30%;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+            z-index: 10;
+        }
+        .interval-side-right {
+            width: 65%;
+            flex-shrink: 0;
+            padding-left: 25px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+            z-index: 10;
         }
 
         /* 列車アイコン */
@@ -332,11 +354,6 @@
             margin-left: 4px;
             color: #ffe082;
             font-size: 0.7rem;
-        }
-
-        .v-interval-row .train-icon {
-            position: absolute;
-            transform: translateY(-50%);
         }
 
         .dir-arrow-down::after { content: " ▼"; font-size: 0.65rem; }
@@ -809,6 +826,16 @@
     </div>
 
     <script>
+        // HTMLエスケープヘルパー
+        function escapeHtml(str) {
+            if (typeof str !== 'string') return str;
+            return str.replace(/&/g, '&amp;')
+                      .replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;')
+                      .replace(/"/g, '&quot;')
+                      .replace(/'/g, '&#039;');
+        }
+
         // Firebaseの設定
         const firebaseConfig = {
             apiKey: "AIzaSyAtC9JwmDhKQ5U75BgtmEmRlxxvyqOxxdU",
@@ -928,6 +955,22 @@
             return h * 3600 + m * 60 + s;
         }
 
+        function shiftTimeStr(timeStr, deltaMin) {
+            if (!timeStr) return timeStr;
+            const parts = timeStr.trim().split(':');
+            if (parts.length < 2) return timeStr;
+            const hasSec = parts.length >= 3;
+            let totalSec = timeToSec(timeStr);
+            if (totalSec < 0) return timeStr;
+            totalSec += deltaMin * 60;
+            if (totalSec < 0) totalSec = 0;
+            const h = Math.floor(totalSec / 3600);
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
+            const pad = (n) => String(n).padStart(2, '0');
+            return hasSec ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(h)}:${pad(m)}`;
+        }
+
         function switchScreen(target) {
             ['zaisen', 'type', 'setting', 'dia', 'general'].forEach(s => {
                 document.getElementById(`screen-${s}`).classList.remove('active');
@@ -993,11 +1036,11 @@
 
                 row.innerHTML = `
                     <span style="font-weight:bold; width: 55px;">種別 ${idx + 1}:</span>
-                    <input type="text" value="${tp.name || ''}" id="type-name-${idx}" placeholder="種別名 (例: ホリデー快速)" style="flex: 2; min-width: 120px;" oninput="updateTypePreview(${idx})">
-                    <input type="text" value="${tp.shortName || ''}" id="type-short-${idx}" placeholder="表示(例: ホ快)" style="width: 70px;" oninput="updateTypePreview(${idx})">
+                    <input type="text" value="${escapeHtml(tp.name || '')}" id="type-name-${idx}" placeholder="種別名 (例: ホリデー快速)" style="flex: 2; min-width: 120px;" oninput="updateTypePreview(${idx})">
+                    <input type="text" value="${escapeHtml(tp.shortName || '')}" id="type-short-${idx}" placeholder="表示(例: ホ快)" style="width: 70px;" oninput="updateTypePreview(${idx})">
                     <input type="color" value="${tp.color || '#78909c'}" id="type-color-${idx}" onchange="updateTypePreview(${idx})">
                     <input type="text" value="${tp.color || '#78909c'}" id="type-hex-${idx}" style="width: 75px;" placeholder="#78909c" oninput="syncColorPickerFromHex(${idx})">
-                    <span class="type-preview-badge" id="type-preview-${idx}" style="background-color: ${tp.color || '#78909c'};">${dispText}</span>
+                    <span class="type-preview-badge" id="type-preview-${idx}" style="background-color: ${tp.color || '#78909c'};">${escapeHtml(dispText)}</span>
                     <button onclick="removeTypeRow(${idx})" style="background:#e74c3c; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;">削除</button>
                 `;
                 container.appendChild(row);
@@ -1068,7 +1111,6 @@
 
             const trackDir = (appData.general && appData.general.trackDir) ? appData.general.trackDir : "up-left";
 
-            // 上り/下り 凡例（路線図の一番上に1回だけ表示。左右どちらが上り/下りかは一般設定のtrackDirに連動）
             const legendLeftEl = document.getElementById('direction-legend-left');
             const legendRightEl = document.getElementById('direction-legend-right');
             if (legendLeftEl && legendRightEl) {
@@ -1095,7 +1137,7 @@
                         const typeObj = appData.types.find(tp => tp.name === tName);
                         const color = typeObj ? typeObj.color : '#78909c';
                         const dispText = (typeObj && typeObj.shortName) ? typeObj.shortName : (tName.charAt(0) || '');
-                        iconsHtml += `<div class="stop-type-icon" style="background-color: ${color};" title="${tName}">${dispText}</div>`;
+                        iconsHtml += `<div class="stop-type-icon" style="background-color: ${color};" title="${escapeHtml(tName)}">${escapeHtml(dispText)}</div>`;
                     });
                     if (iconsHtml) {
                         stopTypeHtml = `<div class="stop-types-wrapper">${iconsHtml}</div>`;
@@ -1110,7 +1152,7 @@
                     const bgColor = getTrainColor(t.trainType);
                     const dirClass = t.direction === 'down' ? 'dir-arrow-down' : 'dir-arrow-up';
                     const delayBadge = t.delay ? `<span class="train-delay-badge">+${t.delay}</span>` : '';
-                    const html = `<div class="train-icon ${dirClass}" style="background-color: ${bgColor};" onclick="openTrainDetail(${t.trainIndex})">${t.trainType} ${t.number || t.name}${t.destination ? ` → ${t.destination}` : ''}${delayBadge}</div>`;
+                    const html = `<div class="train-icon ${dirClass}" style="background-color: ${bgColor};" onclick="openTrainDetail(${t.trainIndex})">${escapeHtml(t.trainType)} ${escapeHtml(t.number || t.name)}${t.destination ? ` → ${escapeHtml(t.destination)}` : ''}${delayBadge}</div>`;
                     
                     const isLeft = (trackDir === 'up-left') ? (t.direction === 'up') : (t.direction === 'down');
                     if (isLeft) leftTrainHtml += html;
@@ -1119,8 +1161,8 @@
 
                 stRow.innerHTML = `
                     <div class="station-info-left">
-                        ${st.code ? `<div class="st-code">${st.code}</div>` : ''}
-                        <div class="st-name">${st.name}</div>
+                        ${st.code ? `<div class="st-code">${escapeHtml(st.code)}</div>` : ''}
+                        <div class="st-name">${escapeHtml(st.name)}</div>
                         ${stopTypeHtml}
                         ${leftTrainHtml ? `<div class="station-track-left-trains">${leftTrainHtml}</div>` : ''}
                     </div>
@@ -1135,25 +1177,27 @@
                     const intervalRow = document.createElement('div');
                     intervalRow.className = 'v-interval-row';
 
-                    const trainsBetween = trainPositions.filter(p => p.type === 'between' && p.index === idx);
+                    const trainsBetween = trainPositions
+                        .filter(p => p.type === 'between' && p.index === idx)
+                        .slice()
+                        .sort((a, b) => a.progress - b.progress);
                     let leftBetweenHtml = '';
                     let rightBetweenHtml = '';
 
                     trainsBetween.forEach(t => {
                         const bgColor = getTrainColor(t.trainType);
                         const dirClass = t.direction === 'down' ? 'dir-arrow-down' : 'dir-arrow-up';
-                        const topPercent = Math.max(10, Math.min(90, t.progress * 100));
                         const delayBadge = t.delay ? `<span class="train-delay-badge">+${t.delay}</span>` : '';
-                        const html = `<div class="train-icon ${dirClass}" style="top:${topPercent}%; background-color: ${bgColor};" onclick="openTrainDetail(${t.trainIndex})">${t.trainType} ${t.number || t.name}${t.destination ? ` → ${t.destination}` : ''}${delayBadge}</div>`;
-                        
+                        const html = `<div class="train-icon ${dirClass}" onclick="openTrainDetail(${t.trainIndex})" style="background-color: ${bgColor};" title="進捗 ${Math.round(t.progress * 100)}%">${escapeHtml(t.trainType)} ${escapeHtml(t.number || t.name)}${t.destination ? ` → ${escapeHtml(t.destination)}` : ''}${delayBadge}</div>`;
+
                         const isLeft = (trackDir === 'up-left') ? (t.direction === 'up') : (t.direction === 'down');
                         if (isLeft) leftBetweenHtml += html;
                         else rightBetweenHtml += html;
                     });
 
                     intervalRow.innerHTML = `
-                        <div style="position:absolute; left:0; width:30%; height:100%; display:flex; justify-content:flex-end;">${leftBetweenHtml}</div>
-                        <div style="position:absolute; right:0; width:65%; height:100%; padding-left:25px; box-sizing:border-box;">${rightBetweenHtml}</div>
+                        <div class="interval-side-left">${leftBetweenHtml}</div>
+                        <div class="interval-side-right">${rightBetweenHtml}</div>
                     `;
                     wrapper.appendChild(intervalRow);
                 }
@@ -1173,18 +1217,11 @@
                 const sched = t.schedule;
                 if (!sched || sched.length < 2) return;
 
-                // 遅れ（分）を考慮した実効時刻。遅れがある列車は、その分だけ手前の時刻表状態として扱う。
                 const delayMin = t.delay || 0;
-                const effectiveSec = currentSec - (delayMin * 60);
+                const effectiveSec = currentSec;
 
-                // 列車自身が持つ方向（上り/下り）を正とする。
-                // ※ schedule配列の格納順（先頭/末尾のstationIndex比較）からは方向を再判定しない。
-                //   syncDiaInputsToMemory()等での保存時、schedule配列は駅Index昇順で
-                //   作り直されるため、上り列車では配列順＝時系列の逆順になり得る。
                 const direction = (t.direction === 'up' || t.isReversed) ? 'up' : 'down';
 
-                // 在線（駅間）判定は「配列内で隣り合う要素」が時系列で連続している前提のため、
-                // 方向に応じて必ず時系列順（上り＝駅Index降順／下り＝駅Index昇順）に並べ直してから使う。
                 const validSched = sched
                     .filter(s => s.arr || s.dep)
                     .slice()
@@ -1331,8 +1368,6 @@
                 if (typeInput) train.type = typeInput.value;
 
                 const newSched = [];
-                // 上り列車は駅Index降順（＝時系列順）で走査し、schedule配列の格納順を
-                // 実際の走行順と一致させる（renderDiaForm()の入力欄表示順と揃える）。
                 const stationIndices = appData.stations.map((_, idx) => idx);
                 if (train.isReversed) stationIndices.reverse();
 
@@ -1431,18 +1466,15 @@
             });
         }
 
-        /* 駅の並び順変更処理 */
         function moveStationRow(idx, direction) {
             syncRouteInputsToMemory();
             const targetIdx = idx + direction;
             if (targetIdx < 0 || targetIdx >= appData.stations.length) return;
 
-            // 駅配列要素の入れ替え
             const tempSt = appData.stations[idx];
             appData.stations[idx] = appData.stations[targetIdx];
             appData.stations[targetIdx] = tempSt;
 
-            // ダイヤ側の駅インデックス参照(stationIndex)もあわせて追従変更
             appData.trains.forEach(train => {
                 if (!train.schedule) return;
                 train.schedule.forEach(sc => {
@@ -1467,7 +1499,6 @@
             syncRouteInputsToMemory();
             appData.stations.splice(idx, 1);
             
-            // 削除された駅以降のインデックス調整
             appData.trains.forEach(train => {
                 if (!train.schedule) return;
                 train.schedule = train.schedule.filter(sc => sc.stationIndex !== idx).map(sc => {
@@ -1529,7 +1560,6 @@
             document.getElementById('train-detail-modal').classList.add('active');
         }
 
-        // 時刻表示形式（一般設定）に応じて "HH:MM:SS" / "HH:MM" 形式の文字列を整形する
         function formatTimeForDisplay(timeStr) {
             if (!timeStr) return timeStr;
             const displayFormat = (appData.general && appData.general.timeDisplayFormat) ? appData.general.timeDisplayFormat : 'sec';
@@ -1552,7 +1582,7 @@
             let rows = '';
             stationOrder.forEach(item => {
                 const sc = (train.schedule || []).find(s => s.stationIndex === item.originalIndex);
-                if (!sc) return; // 通過も停車もしない駅は表示しない
+                if (!sc) return;
                 const isPass = sc.type === 'pass';
                 const arrText = isPass ? 'レ' : (sc.arr ? formatTimeForDisplay(sc.arr) : '-');
                 const depText = isPass ? '' : (sc.dep ? formatTimeForDisplay(sc.dep) : '-');
@@ -1652,7 +1682,10 @@
 
             train.type = document.getElementById('te-type-select').value;
             train.destination = document.getElementById('te-destination').value.trim();
-            train.delay = parseInt(document.getElementById('te-delay').value, 10) || 0;
+
+            const prevDelay = train.delay || 0;
+            const newDelay = parseInt(document.getElementById('te-delay').value, 10) || 0;
+            const delayDiffMin = newDelay - prevDelay;
 
             const newSched = [];
             document.querySelectorAll('#te-stop-tbody tr').forEach(tr => {
@@ -1661,9 +1694,13 @@
                 const statusSelect = tr.querySelector('.te-status');
                 const sIdx = parseInt(arrInput.dataset.sidx, 10);
                 const status = statusSelect.value;
-                const arrVal = arrInput.value.trim();
-                const depVal = depInput.value.trim();
+                let arrVal = arrInput.value.trim();
+                let depVal = depInput.value.trim();
                 if (status !== 'none' && (arrVal || depVal)) {
+                    if (delayDiffMin !== 0) {
+                        if (arrVal) arrVal = shiftTimeStr(arrVal, delayDiffMin);
+                        if (depVal) depVal = shiftTimeStr(depVal, delayDiffMin);
+                    }
                     newSched.push({
                         stationIndex: sIdx,
                         arr: arrVal,
@@ -1672,9 +1709,9 @@
                     });
                 }
             });
-            // 時系列順（方向に応じて）に並べ直してから保存する
             newSched.sort((a, b) => train.isReversed ? b.stationIndex - a.stationIndex : a.stationIndex - b.stationIndex);
             train.schedule = newSched;
+            train.delay = newDelay;
 
             markUnsaved();
             closeTrainEditModal();
@@ -1710,7 +1747,6 @@
         /* --- 【JSONデータエクスポート（保存）処理】 --- */
         function exportJSON() {
             try {
-                // 入力中の未確定フォームデータがあればメモリに同期
                 if (document.getElementById('screen-setting').classList.contains('active')) {
                     syncRouteInputsToMemory();
                 } else if (document.getElementById('screen-type').classList.contains('active')) {
@@ -2000,437 +2036,601 @@
             };
         }
 
-        /* --- 【OuDia / OuDia2 インポート処理】 --- */
-        function parseOudTimeToSec(tStr) {
-            if (!tStr) return null;
-            let s = String(tStr).trim();
-            if (!s) return null;
-            s = s.padStart(s.length <= 4 ? 4 : 6, '0');
-            let h = 0, m = 0, sec = 0;
-            if (s.length === 4) {
-                h = parseInt(s.substring(0, 2), 10);
-                m = parseInt(s.substring(2, 4), 10);
-            } else if (s.length === 6) {
-                h = parseInt(s.substring(0, 2), 10);
-                m = parseInt(s.substring(2, 4), 10);
-                sec = parseInt(s.substring(4, 6), 10);
-            } else {
-                return null;
+        /* --- 【テキストベース PDF パーサー群】 --- */
+
+        function groupWordsIntoLines(words, tol = 3) {
+            const sorted = words.slice().sort((a, b) => a.top - b.top || a.x0 - b.x0);
+            const lines = [];
+            let currentLine = null;
+            for (const w of sorted) {
+                if (!currentLine || Math.abs(w.top - currentLine.top) > tol) {
+                    currentLine = { top: w.top, words: [] };
+                    lines.push(currentLine);
+                }
+                currentLine.words.push(w);
+                currentLine.top = (currentLine.top * (currentLine.words.length - 1) + w.top) / currentLine.words.length;
             }
-            if ([h, m, sec].some(Number.isNaN)) return null;
-            return h * 3600 + m * 60 + sec;
+            return lines.map(l => l.words.sort((a, b) => a.x0 - b.x0).map(w => w.text).join(' ').replace(/[ \t]+/g, ' ').trim());
+        }
+
+        function pagesWordsToPlainText(pagesWords) {
+            let text = '';
+            pagesWords.forEach(words => {
+                text += groupWordsIntoLines(words).join('\n') + '\n';
+            });
+            return text;
+        }
+
+        function padTimeStr(t) {
+            if (!t) return '';
+            const parts = t.trim().split(':');
+            if (parts.length === 2) return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:00`;
+            if (parts.length === 3) return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:${parts[2].padStart(2, '0')}`;
+            return t;
+        }
+
+        function orientAndMergeStationSeq(master, seq) {
+            if (master.length === 0) return seq.slice();
+            const indexOf = new Map(master.map((s, i) => [s, i]));
+
+            function monotonicScore(arr) {
+                let score = 0, last = -1, count = 0;
+                for (const s of arr) {
+                    if (indexOf.has(s)) {
+                        const idx = indexOf.get(s);
+                        if (idx > last) score++;
+                        last = idx;
+                        count++;
+                    }
+                }
+                return count > 0 ? score / count : 0;
+            }
+
+            const fwdScore = monotonicScore(seq);
+            const revSeq = seq.slice().reverse();
+            const revScore = monotonicScore(revSeq);
+            const oriented = revScore > fwdScore ? revSeq : seq;
+
+            const result = master.slice();
+            let lastKnownPos = -1;
+            for (let i = 0; i < oriented.length; i++) {
+                const s = oriented[i];
+                const pos = result.indexOf(s);
+                if (pos !== -1) {
+                    lastKnownPos = pos;
+                    continue;
+                }
+                let nextKnownPos = -1;
+                for (let j = i + 1; j < oriented.length; j++) {
+                    const p = result.indexOf(oriented[j]);
+                    if (p !== -1) { nextKnownPos = p; break; }
+                }
+                let insertAt;
+                if (lastKnownPos !== -1) insertAt = lastKnownPos + 1;
+                else if (nextKnownPos !== -1) insertAt = nextKnownPos;
+                else insertAt = result.length;
+                result.splice(insertAt, 0, s);
+                lastKnownPos = insertAt;
+            }
+            return result;
+        }
+
+        function buildStationOrderFromSequences(sequences) {
+            let master = [];
+            sequences.forEach(seq => { master = orientAndMergeStationSeq(master, seq); });
+            return master;
+        }
+
+        function isReversedForStationOrder(master, seq) {
+            const indexOf = new Map(master.map((s, i) => [s, i]));
+            function monotonicScore(arr) {
+                let score = 0, last = -1, count = 0;
+                for (const s of arr) {
+                    if (indexOf.has(s)) {
+                        const idx = indexOf.get(s);
+                        if (idx > last) score++;
+                        last = idx;
+                        count++;
+                    }
+                }
+                return count > 0 ? score / count : 0;
+            }
+            const fwd = monotonicScore(seq);
+            const rev = monotonicScore(seq.slice().reverse());
+            return rev > fwd;
+        }
+
+        function typesFromNames(typeNames) {
+            const types = typeNames.map((n, i) => ({ name: n, shortName: n.charAt(0) || '普', color: PDF_PALETTE[i % PDF_PALETTE.length] }));
+            if (types.length === 0) types.push({ name: '普通', shortName: '普', color: PDF_PALETTE[0] });
+            return types;
+        }
+
+        function detectTextPdfFormat(fullText) {
+            if (fullText.includes('【運用表】')) return 'unyou';
+            const hasDutyNo = /運用番号[:：]/.test(fullText);
+            const hasTrainNo = /列車番号[:：]/.test(fullText);
+            if (hasDutyNo && hasTrainNo && fullText.includes('駅名')) return 'block1000';
+            if (fullText.includes('列車名') && !hasDutyNo) return 'simple';
+            return 'grid';
+        }
+
+        /* ---------- ①運用表（【運用表】+ ①②③...の列車ブロック） ---------- */
+
+        function parseUnyouHyoText(text) {
+            const rawLines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(l => l);
+            const trains = [];
+            let current = null;
+
+            const headerRe = /^[①-⑳]?\s*(\S+?)(?:始発|発)\s+(\S+?)\s+(\S+?)行/;
+            const numRe = /^(?:列番|列車番号)[:：]\s*([^\s(（]+)/;
+            const dutyRe = /^\d+運用$/;
+            const stopLineRe = /^(\d+|=|通)\s*(.+?)\s+(\d{1,2}:\d{2}(?::\d{2})?)(.*)$/;
+
+            function pushCurrent() {
+                if (current && current.rows.length) trains.push(current);
+                current = null;
+            }
+
+            for (const line of rawLines) {
+                if (dutyRe.test(line)) continue;
+                if (line.startsWith('【')) continue;
+                if (/^作製者/.test(line)) continue;
+
+                const headerMatch = line.match(headerRe);
+                if (headerMatch) {
+                    pushCurrent();
+                    current = {
+                        origin: headerMatch[1],
+                        type: headerMatch[2],
+                        destination: headerMatch[3],
+                        number: '',
+                        rows: []
+                    };
+                    continue;
+                }
+
+                const numMatch = line.match(numRe);
+                if (numMatch && current) {
+                    current.number = numMatch[1];
+                    continue;
+                }
+
+                if (!current) continue;
+
+                const m = line.match(stopLineRe);
+                if (!m) continue;
+
+                const platform = m[1];
+                let stationField = m[2].trim();
+                const time = padTimeStr(m[3]);
+
+                let suffix = null;
+                if (/(着|発|レ)$/.test(stationField)) {
+                    suffix = stationField.slice(-1);
+                    stationField = stationField.slice(0, -1).trim();
+                }
+                if (!stationField) continue;
+
+                if (suffix === '着') {
+                    current.rows.push({ station: stationField, arr: time, dep: '', type: 'stop' });
+                } else if (suffix === '発') {
+                    const last = current.rows[current.rows.length - 1];
+                    if (last && last.station === stationField && last.dep === '' && last.type === 'stop') {
+                        last.dep = time;
+                    } else {
+                        current.rows.push({ station: stationField, arr: '', dep: time, type: 'stop' });
+                    }
+                } else if (suffix === 'レ' || (platform === '=' && !suffix) || platform === '通') {
+                    current.rows.push({ station: stationField, arr: time, dep: time, type: 'pass' });
+                } else {
+                    current.rows.push({ station: stationField, arr: time, dep: time, type: 'stop' });
+                }
+            }
+            pushCurrent();
+            return trains;
+        }
+
+        function unyouTrainsToAppData(trains) {
+            const sequences = trains.map(t => t.rows.map(r => r.station));
+            const stationOrder = buildStationOrderFromSequences(sequences);
+            const stationIndex = new Map(stationOrder.map((s, i) => [s, i]));
+
+            const typeNamesSeen = [];
+            trains.forEach(t => { if (t.type && !typeNamesSeen.includes(t.type)) typeNamesSeen.push(t.type); });
+            const types = typesFromNames(typeNamesSeen);
+
+            const appTrains = trains.map((t, idx) => {
+                const seq = t.rows.map(r => r.station);
+                const isReversed = isReversedForStationOrder(stationOrder, seq);
+                const schedule = t.rows.map(r => ({
+                    stationIndex: stationIndex.get(r.station),
+                    arr: r.arr,
+                    dep: r.dep,
+                    type: r.type
+                })).filter(s => s.stationIndex !== undefined);
+                schedule.sort((a, b) => isReversed ? b.stationIndex - a.stationIndex : a.stationIndex - b.stationIndex);
+                return {
+                    number: t.number,
+                    name: t.number || `${t.origin}発${idx + 1}`,
+                    type: t.type,
+                    destination: t.destination,
+                    direction: isReversed ? 'up' : 'down',
+                    isReversed,
+                    schedule
+                };
+            });
+
+            return {
+                name: '',
+                types,
+                stations: stationOrder.map(n => ({ name: n, code: '', stopTypes: '' })),
+                trains: appTrains,
+                general: { trackDir: 'up-left', timeUnit: 'sec', timeDisplayFormat: 'sec' }
+            };
+        }
+
+        /* ---------- ②「運用番号：」「列車番号：」ブロック形式（1000M形式） ---------- */
+
+        function parseTrainBlockText(text) {
+            const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(l => l);
+            const trains = [];
+            let current = null;
+            let pendingDutyNo = '';
+            const timeRe = /^\d{1,2}:\d{2}(?::\d{2})?$/;
+            const dutyRe = /^運用番号[:：]\s*(\S+)/;
+            const trainRe = /^列車番号[:：]\s*(\S+)\s+(\S+)\s+(\S+)/;
+
+            function pushCurrent() {
+                if (current && current.rows.length) trains.push(current);
+                current = null;
+            }
+
+            for (const line of lines) {
+                const dutyMatch = line.match(dutyRe);
+                if (dutyMatch) { pendingDutyNo = dutyMatch[1]; continue; }
+
+                const trainMatch = line.match(trainRe);
+                if (trainMatch) {
+                    pushCurrent();
+                    current = { number: trainMatch[1], type: trainMatch[2], destination: trainMatch[3], dutyNo: pendingDutyNo, rows: [] };
+                    continue;
+                }
+
+                if (line.startsWith('駅名')) continue;
+                if (!current) continue;
+                if (/^(回\s*送|入\s*庫|出\s*庫)$/.test(line)) continue;
+
+                const tokens = line.split(/[\s ]+/).filter(t => t);
+                if (tokens.length < 2) continue;
+                const stationNameRaw = tokens[0];
+                if (!stationNameRaw || /^(回送|出庫|入庫)$/.test(stationNameRaw)) continue;
+                const timeTokens = tokens.slice(1).filter(t => timeRe.test(t));
+                if (timeTokens.length === 0) continue;
+                current.rows.push({ station: stationNameRaw, timeTokens });
+            }
+            pushCurrent();
+
+            trains.forEach(tr => {
+                tr.schedule = tr.rows.map((r, idx) => {
+                    let arr = '', dep = '';
+                    if (idx === 0) {
+                        dep = padTimeStr(r.timeTokens[0] || '');
+                    } else if (idx === tr.rows.length - 1) {
+                        arr = padTimeStr(r.timeTokens[0] || '');
+                    } else {
+                        arr = padTimeStr(r.timeTokens[0] || '');
+                        dep = padTimeStr(r.timeTokens[1] || r.timeTokens[0] || '');
+                    }
+                    return { station: r.station, arr, dep, type: 'stop' };
+                });
+            });
+
+            return trains;
+        }
+
+        function blockTrainsToAppData(trains) {
+            const sequences = trains.map(t => t.schedule.map(r => r.station));
+            const stationOrder = buildStationOrderFromSequences(sequences);
+            const stationIndex = new Map(stationOrder.map((s, i) => [s, i]));
+
+            const typeNamesSeen = [];
+            trains.forEach(t => { if (t.type && !typeNamesSeen.includes(t.type)) typeNamesSeen.push(t.type); });
+            const types = typesFromNames(typeNamesSeen);
+
+            const appTrains = trains.map(t => {
+                const seq = t.schedule.map(r => r.station);
+                const isReversed = isReversedForStationOrder(stationOrder, seq);
+                const schedule = t.schedule.map(r => ({
+                    stationIndex: stationIndex.get(r.station),
+                    arr: r.arr,
+                    dep: r.dep,
+                    type: r.type
+                })).filter(s => s.stationIndex !== undefined);
+                schedule.sort((a, b) => isReversed ? b.stationIndex - a.stationIndex : a.stationIndex - b.stationIndex);
+                return {
+                    number: t.number,
+                    name: t.number,
+                    type: t.type,
+                    destination: t.destination,
+                    direction: isReversed ? 'up' : 'down',
+                    isReversed,
+                    schedule
+                };
+            });
+
+            return {
+                name: '',
+                types,
+                stations: stationOrder.map(n => ({ name: n, code: '', stopTypes: '' })),
+                trains: appTrains,
+                general: { trackDir: 'up-left', timeUnit: 'sec', timeDisplayFormat: 'sec' }
+            };
+        }
+
+        /* ---------- ③単一列車の簡易時刻表リスト ---------- */
+
+        function parseSimpleTrainListText(text) {
+            const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(l => l);
+            const trains = [];
+            let current = null;
+
+            const originRe = /^(\S+?)着発\s*(\d{1,2}:\d{2}(?::\d{2})?)$/;
+            const normalRe = /^(\S+?)着\s*(\d{1,2}:\d{2}(?::\d{2})?)\s*発\s*(\d{1,2}:\d{2}(?::\d{2})?)$/;
+            const arrOnlyRe = /^(\S+?)着\s*(\d{1,2}:\d{2}(?::\d{2})?)$/;
+
+            function pushCurrent() {
+                if (current && current.rows.length) trains.push(current);
+                current = null;
+            }
+            function ensureCurrent() {
+                if (!current) current = { number: '', type: '', name: '', destination: '', rows: [] };
+                return current;
+            }
+
+            for (const line of lines) {
+                if (line === '駅名') continue;
+
+                const idMatch = line.match(/^着\/発\s*(\S+)/);
+                if (idMatch) { ensureCurrent().number = idMatch[1]; continue; }
+
+                const typeMatch = line.match(/^種別\s*(\S+)/);
+                if (typeMatch) {
+                    if (current && current.rows.length) pushCurrent();
+                    ensureCurrent().type = typeMatch[1];
+                    continue;
+                }
+
+                const nameMatch = line.match(/^列車名\s*(\S+)/);
+                if (nameMatch) {
+                    const nm = ensureCurrent();
+                    nm.name = nameMatch[1];
+                    nm.destination = nameMatch[1].replace(/ゆき$|行き$|行$/, '');
+                    continue;
+                }
+
+                let m = line.match(originRe);
+                if (m) { ensureCurrent().rows.push({ station: m[1], arr: padTimeStr(m[2]), dep: padTimeStr(m[2]), type: 'stop' }); continue; }
+
+                m = line.match(normalRe);
+                if (m) { ensureCurrent().rows.push({ station: m[1], arr: padTimeStr(m[2]), dep: padTimeStr(m[3]), type: 'stop' }); continue; }
+
+                m = line.match(arrOnlyRe);
+                if (m) { ensureCurrent().rows.push({ station: m[1], arr: padTimeStr(m[2]), dep: '', type: 'stop' }); continue; }
+            }
+            pushCurrent();
+
+            if (trains.length && !trains[trains.length - 1].destination) {
+                const t = trains[trains.length - 1];
+                if (t.rows.length) t.destination = t.rows[t.rows.length - 1].station;
+            }
+            return trains;
+        }
+
+        function simpleTrainsToAppData(trains) {
+            return blockTrainsToAppData(trains.map(t => ({
+                number: t.number || t.name,
+                type: t.type || '普通',
+                destination: t.destination || '',
+                schedule: t.rows
+            })));
+        }
+
+        /* --- 【.oud / .oud2 パーサー】 --- */
+
+        function parseOudText(text) {
+            const lines = text.split(/\r?\n/);
+            let routeName = "";
+            const stations = [];
+            const types = [];
+            const trains = [];
+
+            let currentSection = "";
+            let currentTrain = null;
+
+            for (let line of lines) {
+                line = line.trim();
+                if (!line) continue;
+
+                if (line.startsWith('Rosen.')) {
+                    currentSection = "rosen";
+                    continue;
+                } else if (line.startsWith('Eki.')) {
+                    currentSection = "eki";
+                    stations.push({ name: "", code: "", stopTypes: "" });
+                    continue;
+                } else if (line.startsWith('Ressyasyubetsu.')) {
+                    currentSection = "type";
+                    types.push({ name: "", shortName: "", color: "#78909c" });
+                    continue;
+                } else if (line.startsWith('Ressya.')) {
+                    currentSection = "train";
+                    currentTrain = {
+                        number: "",
+                        name: "",
+                        destination: "",
+                        type: "",
+                        direction: "down",
+                        isReversed: false,
+                        schedule: []
+                    };
+                    trains.push(currentTrain);
+                    continue;
+                }
+
+                const eqIdx = line.indexOf('=');
+                if (eqIdx === -1) continue;
+                const key = line.substring(0, eqIdx).trim();
+                const val = line.substring(eqIdx + 1).trim();
+
+                if (currentSection === "rosen") {
+                    if (key === "Rosenmei") routeName = val;
+                } else if (currentSection === "eki") {
+                    const st = stations[stations.length - 1];
+                    if (key === "Ekimei") st.name = val;
+                } else if (currentSection === "type") {
+                    const tp = types[types.length - 1];
+                    if (key === "Syubetsumei") tp.name = val;
+                    if (key === "Ryakusyou") tp.shortName = val;
+                    if (key === "JikokuhyouMojiIro") {
+                        if (val.startsWith('00')) {
+                            const hex = val.replace(/^00/, '#');
+                            tp.color = hex;
+                        }
+                    }
+                } else if (currentSection === "train" && currentTrain) {
+                    if (key === "Ressyabangou") currentTrain.number = val;
+                    if (key === "Ressyamei") currentTrain.name = val;
+                    if (key === "Syubetsu") {
+                        const typeIdx = parseInt(val, 10);
+                        if (!isNaN(typeIdx) && types[typeIdx]) {
+                            currentTrain.type = types[typeIdx].name;
+                        }
+                    }
+                    if (key === "Hougou") {
+                        if (val === "1" || val === "Nobori") {
+                            currentTrain.direction = "up";
+                            currentTrain.isReversed = true;
+                        }
+                    }
+                    if (key === "EkiJikoku") {
+                        const entries = val.split(',');
+                        entries.forEach((entry, sIdx) => {
+                            if (!entry || entry === '1' || entry === '2') return;
+                            let arr = "", dep = "";
+                            const times = entry.split('/');
+                            if (times.length === 1) {
+                                dep = formatOudTime(times[0]);
+                            } else if (times.length >= 2) {
+                                arr = formatOudTime(times[0]);
+                                dep = formatOudTime(times[1]);
+                            }
+                            if (arr || dep) {
+                                currentTrain.schedule.push({
+                                    stationIndex: sIdx,
+                                    arr: arr,
+                                    dep: dep,
+                                    type: 'stop'
+                                });
+                            }
+                        });
+                    }
+                }
+            }
+
+            return {
+                name: routeName,
+                types: types.length > 0 ? types : [{ name: "普通", shortName: "普", color: "#78909c" }],
+                stations: stations,
+                trains: trains,
+                general: { trackDir: "up-left", timeUnit: "sec", timeDisplayFormat: "sec" }
+            };
         }
 
         function formatOudTime(tStr) {
-            if (!tStr) return '';
-            let s = String(tStr).trim();
-            if (!s) return '';
-            s = s.padStart(s.length <= 4 ? 4 : 6, '0');
-            if (s.length === 4) return `${s.substring(0, 2)}:${s.substring(2, 4)}:00`;
-            if (s.length === 6) return `${s.substring(0, 2)}:${s.substring(2, 4)}:${s.substring(4, 6)}`;
-            return '';
-        }
-
-        function parseOuDia2(text) {
-            const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/);
-            const root = {
-                FileType: '',
-                RouteName: '',
-                Eki: [],
-                Syubetsu: [],
-                Kudari: [],
-                Nobori: [],
-                raw: {}
-            };
-
-            const stack = [];
-            let currentObj = null;
-
-            const addRootField = (key, value) => {
-                if (key === 'FileType') root.FileType = value;
-                else if (key === 'Rosenmei') root.RouteName = value;
-                root.raw[key] = value;
-            };
-
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i].trim();
-                if (!line) continue;
-
-                if (line.endsWith('.')) {
-                    const secName = line.slice(0, -1);
-                    stack.push(secName);
-
-                    if (secName === 'Eki' || secName === 'Ressyasyubetsu' || secName === 'Ressya') {
-                        currentObj = { rawFields: {} };
-                    }
-                    continue;
-                }
-
-                if (line === '.') {
-                    const lastSec = stack.pop();
-                    if (lastSec === 'Eki' && currentObj) {
-                        root.Eki.push(currentObj);
-                        currentObj = null;
-                    } else if (lastSec === 'Ressyasyubetsu' && currentObj) {
-                        root.Syubetsu.push(currentObj);
-                        currentObj = null;
-                    } else if (lastSec === 'Ressya' && currentObj) {
-                        const parent = stack[stack.length - 1];
-                        const houkou = currentObj.Houkou || '';
-                        if (parent === 'Kudari' || houkou === 'Kudari') root.Kudari.push(currentObj);
-                        else root.Nobori.push(currentObj);
-                        currentObj = null;
-                    }
-                    continue;
-                }
-
-                const eq = line.indexOf('=');
-                if (eq === -1) continue;
-
-                const key = line.substring(0, eq).trim();
-                const value = line.substring(eq + 1).trim();
-
-                if (currentObj) {
-                    currentObj[key] = value;
-                    currentObj.rawFields[key] = value;
-                } else {
-                    addRootField(key, value);
-                }
+            if (!tStr) return "";
+            let digits = tStr.replace(/\D/g, '');
+            if (digits.length === 3) digits = '0' + digits;
+            if (digits.length === 4) {
+                return `${digits.substring(0,2)}:${digits.substring(2,4)}:00`;
+            } else if (digits.length === 6) {
+                return `${digits.substring(0,2)}:${digits.substring(2,4)}:${digits.substring(4,6)}`;
             }
-
-            return root;
+            return tStr;
         }
 
-        function parseOudStationTime(raw) {
-            if (raw === undefined || raw === null) {
-                return { stationStatus: '', arr: '', dep: '', raw: '' };
-            }
+        /* --- 【インポート統括処理】 --- */
 
-            const original = String(raw).trim();
-            if (!original) return { stationStatus: '', arr: '', dep: '', raw: original };
-
-            const withoutTrack = original.split('$')[0];
-            const semicolon = withoutTrack.indexOf(';');
-
-            let stationStatus = '';
-            let timePart = withoutTrack;
-
-            if (semicolon >= 0) {
-                stationStatus = withoutTrack.substring(0, semicolon);
-                timePart = withoutTrack.substring(semicolon + 1);
-            }
-
-            const slash = timePart.indexOf('/');
-            let arr = '';
-            let dep = '';
-
-            if (slash >= 0) {
-                arr = formatOudTime(timePart.substring(0, slash));
-                dep = formatOudTime(timePart.substring(slash + 1));
-            } else {
-                dep = formatOudTime(timePart);
-            }
-
-            return { stationStatus, arr, dep, raw: original };
-        }
-
-        function getRessyaDirection(rObj, fallback) {
-            const h = String(rObj.Houkou || '').toLowerCase();
-            if (h === 'kudari' || h === 'down') return 'down';
-            if (h === 'nobori' || h === 'up') return 'up';
-            return fallback;
-        }
-
-        function getSyubetsuFromRessya(rObj, oudData) {
-            const raw = rObj.Syubetsu;
-            const idx = parseInt(raw, 10);
-            if (!Number.isNaN(idx) && oudData.Syubetsu[idx]) return oudData.Syubetsu[idx];
-
-            if (raw && typeof raw === 'string') {
-                const direct = oudData.Syubetsu.find(s =>
-                    s.Syubetsumei === raw || s.Ryakusyou === raw
-                );
-                if (direct) return direct;
-            }
-            return null;
-        }
-
-        function getTrainDestination(schedule, stations, rObj) {
-            const outerTerminal =
-                rObj.OuterTerminalEkimei ||
-                rObj.OuterTerminal ||
-                rObj.ShuchakuEkimei ||
-                '';
-
-            const directDestination =
-                rObj.Shuuchakueki ||
-                rObj.Shuchakueki ||
-                rObj.ShuchakuekiMei ||
-                rObj.Destination ||
-                '';
-
-            if (directDestination) return directDestination;
-            if (!schedule.length) return outerTerminal || '';
-
-            const last = schedule[schedule.length - 1];
-            const st = stations[last.stationIndex];
-            return st ? st.name : (outerTerminal || '');
-        }
-
-        function escapeHtml(value) {
-            return String(value ?? '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
-        }
-
-        function importAnyFile(event) {
-            const file = event.target.files && event.target.files[0];
+        async function importAnyFile(event) {
+            const file = event.target.files[0];
             if (!file) return;
 
-            const filename = file.name.toLowerCase();
-            const reader = new FileReader();
+            const fileName = file.name.toLowerCase();
 
-            if (filename.endsWith('.pdf')) {
-                reader.onload = async function(e) {
-                    try {
-                        const arrayBuffer = e.target.result;
-                        const parsedData = await parsePdfToAppData(arrayBuffer);
-                        appData = parsedData;
+            try {
+                if (fileName.endsWith('.json')) {
+                    const text = await file.text();
+                    const parsed = JSON.parse(text);
+                    if (parsed && typeof parsed === 'object') {
+                        appData = parsed;
                         if (!appData.types) appData.types = [];
                         if (!appData.stations) appData.stations = [];
                         if (!appData.trains) appData.trains = [];
-                        if (!appData.general) appData.general = { trackDir: 'up-left', timeUnit: 'sec', timeDisplayFormat: 'sec' };
-
+                        if (!appData.general) appData.general = { trackDir: "up-left", timeUnit: "sec", timeDisplayFormat: "sec" };
                         markUnsaved();
-                        renderSettingForm();
-                        renderTypeForm();
-                        renderDiaForm();
+                        alert('JSONデータをインポートしました（※「全員反映」を押すと全員へ反映されます）');
                         renderZaisen();
-
-                        alert(`PDFの解析が完了しました！\n\n・路線名: ${appData.name}\n・駅数: ${appData.stations.length}駅\n・種別数: ${appData.types.length}種\n・列車数: ${appData.trains.length}本`);
-                        switchScreen('zaisen');
-                    } catch (err) {
-                        console.error('PDF Parse Error:', err);
-                        alert('PDFの解析に失敗しました。フォーマットをご確認ください。');
                     }
-                    event.target.value = '';
-                };
-                reader.readAsArrayBuffer(file);
-                return;
-            }
-
-            reader.onload = function(e) {
-                const arrayBuffer = e.target.result;
-                let text = '';
-
-                try {
-                    text = new TextDecoder('shift_jis').decode(arrayBuffer);
-                    if (!text.includes('FileType=') && !text.includes('Rosenmei=')) {
-                        text = new TextDecoder('utf-8').decode(arrayBuffer);
-                    }
-                } catch (err) {
-                    text = new TextDecoder('utf-8').decode(arrayBuffer);
-                }
-
-                if (text.includes('FileType=') || text.includes('Rosenmei=') || filename.endsWith('.oud') || filename.endsWith('.oud2')) {
-                    try {
-                        const oudData = parseOuDia2(text);
-                        const errors = [];
-
-                        appData.name = oudData.RouteName || appData.name || '';
-
-                        appData.stations = oudData.Eki.map((eObj, idx) => ({
-                            name: eObj.Ekimei || `駅${idx + 1}`,
-                            code: eObj.Ekikigou || eObj.EkimeiJikokuRyaku || '',
-                            stopTypes: '',
-                            raw: eObj.rawFields || {}
-                        }));
-
-                        const newTypes = [];
-                        const usedTypeNames = new Set();
-
-                        oudData.Syubetsu.forEach((sObj, idx) => {
-                            const name = sObj.Syubetsumei || `種別${idx + 1}`;
-                            if (usedTypeNames.has(name)) return;
-                            usedTypeNames.add(name);
-
-                            const shortName =
-                                sObj.Ryakusyou ||
-                                sObj.Syubetsuryakusyou ||
-                                (name ? name.charAt(0) : '普');
-
-                            let color = '#78909c';
-                            const existing = appData.types.find(t => t.name === name);
-                            if (existing && existing.color) color = existing.color;
-
-                            newTypes.push({
-                                name,
-                                shortName,
-                                color,
-                                raw: sObj.rawFields || {}
-                            });
-                        });
-
-                        if (newTypes.length === 0) {
-                            newTypes.push({ name: '普通', shortName: '普', color: '#78909c', raw: {} });
-                        }
-                        appData.types = newTypes;
-
-                        const newTrains = [];
-                        const totalStations = appData.stations.length;
-
-                        const processRessyaList = (ressyaList, fallbackDirection, dirName) => {
-                            ressyaList.forEach((rObj, trainIndex) => {
-                                const direction = getRessyaDirection(rObj, fallbackDirection);
-                                const isReversed = direction === 'up';
-
-                                const syubetsuObj = getSyubetsuFromRessya(rObj, oudData);
-                                const typeName = syubetsuObj
-                                    ? (syubetsuObj.Syubetsumei || newTypes[0].name)
-                                    : (newTypes[0]?.name || '普通');
-
-                                const number =
-                                    rObj.Ressyabangou ||
-                                    rObj.Ressyabangou2 ||
-                                    rObj.RessyaBangou ||
-                                    '';
-
-                                const trainName =
-                                    rObj.Ressyamei ||
-                                    rObj.RessyaMei ||
-                                    '';
-
-                                const displayName = number || trainName || `${dirName}${trainIndex + 1}`;
-                                const jikanStr = rObj.EkiJikoku || rObj.EkiJikan || '';
-                                const jikanArray = String(jikanStr).split(',');
-                                const schedule = [];
-
-                                for (let sIdx = 0; sIdx < totalStations; sIdx++) {
-                                    const parsed = parseOudStationTime(jikanArray[sIdx] || '');
-
-                                    if (parsed.arr || parsed.dep) {
-                                        const stationIndex = isReversed
-                                            ? (totalStations - 1 - sIdx)
-                                            : sIdx;
-
-                                        let arr = parsed.arr;
-                                        let dep = parsed.dep;
-
-                                        const arrSec = parseOudTimeToSec(arr);
-                                        const depSec = parseOudTimeToSec(dep);
-                                        if (arrSec !== null && depSec !== null && arrSec > depSec) {
-                                            const stName = appData.stations[stationIndex]?.name || '';
-                                            errors.push({
-                                                errorCode: 'ERR_TIME_REVERSAL',
-                                                direction: dirName,
-                                                trainName: displayName,
-                                                stationName: stName,
-                                                arrRaw: arr,
-                                                depRaw: dep
-                                            });
-                                            dep = arr;
-                                        }
-
-                                        schedule.push({
-                                            stationIndex,
-                                            arr,
-                                            dep,
-                                            type: parsed.stationStatus === '1' ? 'pass' : 'stop',
-                                            stationStatus: parsed.stationStatus,
-                                            raw: parsed.raw
-                                        });
-                                    }
-                                }
-
-                                if (schedule.length > 0) {
-                                    const destination = getTrainDestination(schedule, appData.stations, rObj);
-
-                                    newTrains.push({
-                                        number,
-                                        name: trainName || number || displayName,
-                                        displayName,
-                                        type: typeName,
-                                        destination,
-                                        direction,
-                                        isReversed,
-                                        schedule,
-                                        raw: rObj.rawFields || {}
-                                    });
-                                }
-                            });
-                        };
-
-                        processRessyaList(oudData.Kudari, 'down', '下り');
-                        processRessyaList(oudData.Nobori, 'up', '上り');
-
-                        appData.trains = newTrains;
-
+                } else if (fileName.endsWith('.oud') || fileName.endsWith('.oud2')) {
+                    const buffer = await file.arrayBuffer();
+                    const decoder = new TextDecoder('shift-jis');
+                    const text = decoder.decode(buffer);
+                    const parsed = parseOudText(text);
+                    if (parsed && parsed.stations.length > 0) {
+                        appData = parsed;
                         markUnsaved();
-                        renderSettingForm();
-                        renderTypeForm();
-                        renderDiaForm();
+                        alert('.oud/.oud2 ダイヤデータをインポートしました（※「全員反映」を押すと全員へ反映されます）');
                         renderZaisen();
-
-                        const summary =
-                            `ファイルの読み込みが完了しました！\n\n` +
-                            `・ファイル: ${file.name}\n` +
-                            `・路線名: ${appData.name || '未設定'}\n` +
-                            `・駅数: ${appData.stations.length}\n` +
-                            `・種別数: ${appData.types.length}\n` +
-                            `・列車数: ${appData.trains.length}`;
-
-                        if (errors.length > 0) {
-                            const errContainer = document.getElementById('error-modal-list');
-                            errContainer.innerHTML = '';
-                            errors.forEach(err => {
-                                const card = document.createElement('div');
-                                card.className = 'error-card';
-                                card.innerHTML = `
-                                    <div class="err-code">[${escapeHtml(err.errorCode)}] 時刻逆転エラー</div>
-                                    <div><b>該当列車:</b> ${escapeHtml(err.direction)} ${escapeHtml(err.trainName)} / <b>駅:</b> ${escapeHtml(err.stationName)}</div>
-                                    <div><b>修正:</b> 到着 ${escapeHtml(err.arrRaw)} → 発 ${escapeHtml(err.depRaw)}</div>
-                                `;
-                                errContainer.appendChild(card);
-                            });
-                            document.getElementById('error-modal').classList.add('active');
-                        } else {
-                            alert(summary);
-                        }
-
-                        switchScreen('zaisen');
-                        event.target.value = '';
-                        return;
-
-                    } catch (err) {
-                        console.error('OuDia parse attempt failed:', err);
+                    } else {
+                        alert('.oud/.oud2 ファイルの解析に失敗しました。');
                     }
-                }
+                } else if (fileName.endsWith('.pdf')) {
+                    const buffer = await file.arrayBuffer();
+                    const pagesWords = await extractWordsFromPdfBuffer(buffer);
+                    const plainText = pagesWordsToPlainText(pagesWords);
+                    const pdfFmt = detectTextPdfFormat(plainText);
 
-                try {
-                    const parsedData = JSON.parse(text);
-                    appData = parsedData;
-                    if (!appData.types) appData.types = [];
-                    if (!appData.stations) appData.stations = [];
-                    if (!appData.trains) appData.trains = [];
-                    if (!appData.general) appData.general = { trackDir: 'up-left', timeUnit: 'sec', timeDisplayFormat: 'sec' };
-                    markUnsaved();
-                    renderSettingForm();
-                    renderTypeForm();
-                    renderDiaForm();
-                    renderZaisen();
-                    alert('JSONファイルの読み込みが完了しました！');
-                    switchScreen('zaisen');
-                } catch (err) {
-                    alert('ファイルの解析に失敗しました。対応している形式 (.pdf, .oud, .oud2, JSON) であるかご確認ください。');
-                }
+                    let imported = null;
+                    if (pdfFmt === 'unyou') {
+                        const rawTrains = parseUnyouHyoText(plainText);
+                        imported = unyouTrainsToAppData(rawTrains);
+                    } else if (pdfFmt === 'block1000') {
+                        const rawTrains = parseTrainBlockText(plainText);
+                        imported = blockTrainsToAppData(rawTrains);
+                    } else if (pdfFmt === 'simple') {
+                        const rawTrains = parseSimpleTrainListText(plainText);
+                        imported = simpleTrainsToAppData(rawTrains);
+                    } else {
+                        imported = await parsePdfToAppData(buffer);
+                    }
 
+                    if (imported && imported.stations && imported.stations.length > 0) {
+                        appData = imported;
+                        markUnsaved();
+                        alert('PDFダイヤデータをインポートしました（※「全員反映」を押すと全員へ反映されます）');
+                        renderZaisen();
+                    } else {
+                        alert('PDFの解析に失敗しました。対応しているレイアウトをご確認ください。');
+                    }
+                } else {
+                    alert('サポートされていないファイル形式です。JSON, .oud, .oud2, PDF ファイルを選択してください。');
+                }
+            } catch (err) {
+                console.error("ファイルインポートエラー:", err);
+                alert("ファイルの読み込み・解析中にエラーが発生しました。");
+            } finally {
                 event.target.value = '';
-            };
-
-            reader.readAsArrayBuffer(file);
+            }
         }
     </script>
 </body>
