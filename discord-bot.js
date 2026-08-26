@@ -7,7 +7,8 @@
  * サーバーAPIを経由せず、firebaseClient.js経由で直接Firebaseを読み書きする。
  * ------------------------------------------------------------
  */
-
+const dns = require('dns');
+if (dns.setDefaultResultOrder) { dns.setDefaultResultOrder('ipv4first'); }
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { db, ref, get, set, update, remove, push } = require('./firebaseClient');
 const {
