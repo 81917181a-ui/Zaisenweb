@@ -148,10 +148,13 @@ client.on('interactionCreate', async (i) => {
 
 /* ---------- 期限切れルームの削除（1時間毎） ---------- */
 async function cleanup() {
-  const snap = await db.ref('zaisen/rooms').orderByChild('expiresAt').endAt(Date.now()).get();
-  const del = {};
-  snap.forEach((ch) => { del[`zaisen/rooms/${ch.key}`] = null; del[`zaisen/oud/${ch.key}`] = null; del[`zaisen/participants/${ch.key}`] = null; });
-  const n = Object.keys(del).length / 3;
+  // インデックス不要: ルームは小さいので全件読んで期限切れを抽出
+  const snap = await db.ref('zaisen/rooms').get();
+  const now = Date.now(), del = {};
+  let n = 0;
+  snap.forEach((ch) => {
+    if (!(ch.val().expiresAt > now)) { n++; del[`zaisen/rooms/${ch.key}`] = null; del[`zaisen/oud/${ch.key}`] = null; del[`zaisen/participants/${ch.key}`] = null; }
+  });
   if (n) { await db.ref().update(del); console.log('deleted rooms:', n); }
 }
 setInterval(() => cleanup().catch(console.error), 3600 * 1000);
