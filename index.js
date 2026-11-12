@@ -1,18 +1,23 @@
 // Discord Bot（Render にデプロイ）
-// 必要な環境変数は2つだけ:
+// Realtime Database を使用。環境変数:
 //   FIREBASE_SERVICE_ACCOUNT : Firebase サービスアカウントJSON（中身をそのまま貼り付け）
+//   FIREBASE_DATABASE_URL    : Realtime Database のURL（コンソールの Realtime Database 上部に表示）
 //   DISCORD_TOKEN            : Discord Bot トークン
 // 任意: WEB_BASE_URL（独自ドメインを使う場合。未設定なら https://<projectId>.web.app）
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { Client, GatewayIntentBits, SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
+import { getDatabase, ServerValue } from 'firebase-admin/database';
 
 const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 sa.private_key = sa.private_key.replace(/\\n/g, '\n');
-initializeApp({ credential: cert(sa) });
-const db = getFirestore();
+initializeApp({
+  credential: cert(sa),
+  databaseURL: process.env.FIREBASE_DATABASE_URL || `https://${sa.project_id}-default-rtdb.firebaseio.com`,
+});
+const db = getDatabase();
+const TS = () => ServerValue.TIMESTAMP;
 const BASE = (process.env.WEB_BASE_URL || `https://${sa.project_id}.web.app`).replace(/\/$/, '');
 const TTL_MS = 3 * 24 * 3600 * 1000; // 3日
 
@@ -20,25 +25,32 @@ const safeKey = (no) => 't_' + String(no).replace(/[^0-9A-Za-z_\-぀-ヿ一-鿿]
 const jst = new Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
 
 /* ---------- ルーム ---------- */
-async function findActiveRoom(guildId) {
-  const snap = await db.collection('rooms').where('guildId', '==', guildId).get();
-  const now = Date.now();
-  const alive = snap.docs.filter((d) => d.data().expiresAt.toMillis() > now);
-  alive.sort((a, b) => b.data().createdAt.toMillis() - a.data().createdAt.toMillis());
-  return alive[0] || null;
+async function getRoomById(id) {
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(id)) return null;
+  const snap = await db.ref(`zaisen/rooms/${id}`).get();
+  if (!snap.exists()) return null;
+  const v = snap.val();
+  if (!(v.expiresAt > Date.now())) return null;   // 期限切れは無効
+  return { id, ref: snap.ref, v };
 }
+// コマンド利用者が登録されている（/room 発行 または /join 済み）ルーム
+async function findUserRoom(userId) {
+  const snap = await db.ref(`zaisen/userRooms/${userId}`).get();
+  return snap.exists() ? getRoomById(snap.val().roomId) : null;
+}
+const registerUser = (userId, roomId) => db.ref(`zaisen/userRooms/${userId}`).set({ roomId, joinedAt: TS() });
 const roomUrl = (id) => `${BASE}/?room=${id}`;
 
 const trainCache = new Map();
 // 表示中ダイヤ(diaIndex)の列車を取得（30秒キャッシュ）
 async function loadTrains(room) {
-  const idx = Number(room.data().diaIndex) || 0, key = `${room.id}:${idx}`;
+  const idx = Number(room.v.diaIndex) || 0, key = `${room.id}:${idx}`;
   const c = trainCache.get(key);
   if (c && Date.now() - c.t < 30000) return c.list;
-  const s = await db.doc(`rooms/${room.id}/data/oud`).get();
+  const s = await db.ref(`zaisen/oud/${room.id}/json`).get();
   let list = [];
-  if (s.exists) {
-    try { const j = JSON.parse(s.data().json); list = j.dias ? j.dias[Math.min(idx, j.dias.length - 1)]?.trains || [] : j.trains || []; } catch {}
+  if (s.exists()) {
+    try { const j = JSON.parse(s.val()); list = j.dias ? j.dias[Math.min(idx, j.dias.length - 1)]?.trains || [] : j.trains || []; } catch {}
   }
   trainCache.set(key, { t: Date.now(), list });
   return list;
@@ -49,7 +61,9 @@ const jstNow = () => ((Date.now() / 1000 + 9 * 3600) % 86400);
 /* ---------- コマンド定義 ---------- */
 const commands = [
   new SlashCommandBuilder().setName('room').setDescription('在線表示ルームを発行します（有効期限3日）'),
-  new SlashCommandBuilder().setName('link').setDescription('このサーバーの有効なルームのURLを表示します'),
+  new SlashCommandBuilder().setName('join').setDescription('在線表示ルームに登録します（以後の /delay はそのルームに反映）')
+    .addStringOption((o) => o.setName('room').setDescription('ルームのURL（またはルームID）').setRequired(true)),
+  new SlashCommandBuilder().setName('link').setDescription('あなたが登録されているルームのURLを表示します'),
   new SlashCommandBuilder().setName('delay').setDescription('列車の遅延を設定します')
     .addStringOption((o) => o.setName('train').setDescription('運番').setRequired(true).setAutocomplete(true))
     .addIntegerOption((o) => o.setName('minutes').setDescription('遅延分数（0で解除）').setRequired(true).setMinValue(0).setMaxValue(999)),
@@ -71,7 +85,7 @@ client.on('interactionCreate', async (i) => {
   try {
     if (!i.guildId) return;
     if (i.isAutocomplete()) {
-      const room = await findActiveRoom(i.guildId);
+      const room = await findUserRoom(i.user.id);
       const q = String(i.options.getFocused()).toLowerCase();
       const list = room ? (await trainNos(room)).filter((n) => n.toLowerCase().includes(q)).slice(0, 25) : [];
       return i.respond(list.map((n) => ({ name: n, value: n })));
@@ -81,22 +95,31 @@ client.on('interactionCreate', async (i) => {
     if (i.commandName === 'room') {
       const id = randomBytes(18).toString('base64url');
       const now = Date.now();
-      await db.collection('rooms').doc(id).set({
+      await db.ref(`zaisen/rooms/${id}`).set({
         guildId: i.guildId,
         createdBy: { id: i.user.id, name: i.user.username },
-        createdAt: Timestamp.fromMillis(now),
-        expiresAt: Timestamp.fromMillis(now + TTL_MS),
-        assignments: {}, delays: {},
-        updatedAt: FieldValue.serverTimestamp(),
+        createdAt: now,
+        expiresAt: now + TTL_MS,
+        updatedAt: TS(),
       });
-      return i.reply(`在線表示ルームを発行しました。\n${roomUrl(id)}\n有効期限: ${jst.format(now + TTL_MS)} JST（3日間）\n設定パネル(歯車)の「.oud2」タブからダイヤを読み込んでください。`);
+      await registerUser(i.user.id, id);
+      return i.reply(`在線表示ルームを発行しました。（あなたは自動で登録済み）\n${roomUrl(id)}\n有効期限: ${jst.format(now + TTL_MS)} JST（3日間）\n設定パネル(歯車)の「.oud2」タブからダイヤを読み込んでください。\n他の人は \`/join\` にこのURLを貼ると登録され、/delay が使えます。`);
     }
 
-    const room = await findActiveRoom(i.guildId);
-    if (!room) return i.reply({ content: '有効なルームがありません。/room で発行してください。', flags: ephemeral });
+    if (i.commandName === 'join') {
+      const raw = i.options.getString('room', true).trim();
+      const id = (/[?&]room=([A-Za-z0-9_-]+)/.exec(raw) || /^([A-Za-z0-9_-]{8,64})$/.exec(raw) || [])[1];
+      const target = id ? await getRoomById(id) : null;
+      if (!target) return i.reply({ content: 'ルームが見つからないか、有効期限（3日）が切れています。URLを確認してください。', flags: ephemeral });
+      await registerUser(i.user.id, target.id);
+      return i.reply({ content: `ルームに登録しました。以後あなたの /delay はこのルームに反映されます。\n${roomUrl(target.id)}\n有効期限: ${jst.format(target.v.expiresAt)} JST`, flags: ephemeral });
+    }
+
+    const room = await findUserRoom(i.user.id);
+    if (!room) return i.reply({ content: '登録されている有効なルームがありません。/room で発行するか、/join でルームのURLを登録してください。', flags: ephemeral });
 
     if (i.commandName === 'link') {
-      return i.reply({ content: `${roomUrl(room.id)}\n有効期限: ${jst.format(room.data().expiresAt.toMillis())} JST`, flags: ephemeral });
+      return i.reply({ content: `${roomUrl(room.id)}\n有効期限: ${jst.format(room.v.expiresAt)} JST`, flags: ephemeral });
     }
 
     if (i.commandName === 'delay') {
@@ -107,14 +130,14 @@ client.on('interactionCreate', async (i) => {
       const start = Math.min(...trains.map((t) => t.stops[0][2])), end = Math.max(...trains.map((t) => t.stops[t.stops.length - 1][2]));
       const now = jstNow();
       const state = now < start ? '（まだ出発前です。出発がその分遅れます）' : now > end ? '（すでに終着済みのため、まもなく自動で0に戻ります）' : '';
-      await room.ref.set({ delays: { [safeKey(train)]: min }, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      await room.ref.update({ [`delays/${safeKey(train)}`]: min, updatedAt: TS() });
       return i.reply(min === 0 ? `${train} の遅延を解除しました。` : `${train} を **+${min}分** 遅延に設定しました。${state}\n終点到着後は自動で遅延0に戻り、折り返し列車も遅延0で出発します。`);
     }
 
     if (i.commandName === 'delayclear') {
       const train = i.options.getString('train');
-      if (train) await room.ref.set({ delays: { [safeKey(train.trim())]: 0 }, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-      else await room.ref.update({ delays: {}, updatedAt: FieldValue.serverTimestamp() });
+      if (train) await room.ref.update({ [`delays/${safeKey(train.trim())}`]: 0, updatedAt: TS() });
+      else await room.ref.update({ delays: null, updatedAt: TS() });
       return i.reply(train ? `${train} の遅延を解除しました。` : '全列車の遅延を解除しました。');
     }
   } catch (e) {
@@ -125,9 +148,11 @@ client.on('interactionCreate', async (i) => {
 
 /* ---------- 期限切れルームの削除（1時間毎） ---------- */
 async function cleanup() {
-  const snap = await db.collection('rooms').where('expiresAt', '<', Timestamp.now()).get();
-  for (const d of snap.docs) await db.recursiveDelete(d.ref).catch((e) => console.error('cleanup', e.message));
-  if (snap.size) console.log('deleted rooms:', snap.size);
+  const snap = await db.ref('zaisen/rooms').orderByChild('expiresAt').endAt(Date.now()).get();
+  const del = {};
+  snap.forEach((ch) => { del[`zaisen/rooms/${ch.key}`] = null; del[`zaisen/oud/${ch.key}`] = null; del[`zaisen/participants/${ch.key}`] = null; });
+  const n = Object.keys(del).length / 3;
+  if (n) { await db.ref().update(del); console.log('deleted rooms:', n); }
 }
 setInterval(() => cleanup().catch(console.error), 3600 * 1000);
 cleanup().catch(console.error);
