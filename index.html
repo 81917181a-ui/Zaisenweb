@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>在線表示システム</title>
+<style>
+:root{--fab-bg:#1b6fa8;--line:#1a8fc7;--ink:#222;--mute:#777;--bg:#fff;--red:#e60012}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans JP","Hiragino Sans","Meiryo",system-ui,sans-serif}
+button{font:inherit;cursor:pointer}
+[hidden]{display:none!important}
+
+#topbar{position:sticky;top:0;z-index:20;display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 12px;background:#4f5b6e;color:#fff}
+#ttl{font-weight:700;flex:1 1 auto;min-width:8em}
+#clock{font-variant-numeric:tabular-nums;font-weight:700;font-size:18px}
+#expiry{font-size:11px;opacity:.85;flex-basis:100%}
+.chip{border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:999px;padding:3px 10px;font-size:12px}
+
+#view{max-width:640px;margin:0 auto;padding-bottom:120px}
+#map{display:block;width:100%;height:auto}
+#empty{padding:40px 20px;text-align:center;color:var(--mute)}
+
+.rail{fill:none;stroke:var(--line);stroke-width:5;stroke-linecap:round}
+.dot{fill:var(--line);stroke:#fff;stroke-width:2}
+.sname{font-size:17px;font-weight:700;fill:#111}
+.bdg-t{font-size:13px;fill:#fff;font-weight:700;text-anchor:middle}
+.train{cursor:pointer}
+.train.ready{transition:transform 1s linear}
+#map.fast .train.ready{transition:none}
+.dname{font-size:11px;font-weight:700;fill:#333;text-anchor:middle;paint-order:stroke;stroke:#fff;stroke-width:3px}
+.ibtxt{font-size:22px;font-weight:700;fill:#fff;text-anchor:middle;dominant-baseline:central}
+.dly{font-size:14px;font-weight:700;fill:var(--red);text-anchor:middle;dominant-baseline:central}
+
+#fabs{position:fixed;right:max(14px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));display:flex;gap:10px;z-index:30}
+.fab{width:52px;height:52px;border-radius:50%;border:0;background:var(--fab-bg);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.3);display:grid;place-items:center}
+.fab.text{font-size:14px;font-weight:700}
+
+.panel{position:fixed;right:max(14px,env(safe-area-inset-right));bottom:80px;width:min(380px,calc(100vw - 28px));max-height:calc(100vh - 110px);overflow:auto;background:#fff;border:1px solid #ccd;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.25);padding:12px;z-index:40}
+.panel.wide{width:min(720px,calc(100vw - 28px))}
+.panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.x{border:1px solid #bbb;background:#f6f6f6;border-radius:6px;padding:3px 10px;font-size:12px}
+.tabs{display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap}
+.tabs button{border:1px solid #bbc;background:#f2f4f8;border-radius:6px;padding:4px 10px;font-size:13px}
+.tabs button.on{background:#1b6fa8;color:#fff;border-color:#1b6fa8}
+.tab{display:none}.tab.on{display:block}
+.panel label{display:block;font-size:13px;font-weight:700;margin:8px 0 4px}
+.panel input[type=text],.panel input:not([type]),.panel input[type=time],.panel select,#opsFilter{width:100%;padding:7px 8px;border:1px solid #aab;border-radius:6px;font-size:14px}
+.panel input[type=file]{width:100%;font-size:13px}
+.btn{margin-top:8px;border:0;background:#1b6fa8;color:#fff;border-radius:6px;padding:8px 14px;font-weight:700}
+.btn:disabled{background:#aab;cursor:default}
+.note{font-size:12px;color:var(--mute);margin:6px 0}
+.plist{display:flex;flex-wrap:wrap;gap:6px}
+.plist span{background:#eef;border-radius:999px;padding:2px 10px;font-size:12px}
+
+.tblwrap{margin-top:8px;overflow:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border-bottom:1px solid #e3e3e8;padding:6px 6px;text-align:left;vertical-align:middle}
+th{position:sticky;top:0;background:#f2f4f8}
+td select{max-width:9em;padding:4px;border:1px solid #aab;border-radius:6px;font-size:13px}
+.tb{display:inline-block;min-width:22px;text-align:center;color:#fff;border-radius:3px;padding:1px 4px;font-size:12px;font-weight:700;margin-right:2px}
+.mono{font-variant-numeric:tabular-nums}
+
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:#fff;width:min(560px,100%);max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:16px 18px 24px;position:relative}
+.sheet .close{position:absolute;right:12px;top:10px}
+.m-from{text-align:center;color:#556;font-size:15px;margin-top:6px}
+.m-from small{font-size:11px}
+.m-head{display:flex;align-items:center;justify-content:center;gap:14px;margin:10px 0}
+.m-head .dest{font-size:24px;font-weight:700;color:#445}
+.m-head .dest small{font-size:12px;font-weight:400}
+.m-no{border:1.5px solid #445;padding:2px 8px;font-weight:700;color:#445}
+.m-sub{text-align:center;font-size:13px;color:#667}
+.m-ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;margin:10px 0}
+.m-ctl button{border:1px solid #99a;background:#f4f5f9;border-radius:6px;padding:4px 10px}
+.m-ctl select{padding:4px;border:1px solid #99a;border-radius:6px}
+.m-cap{text-align:right;font-size:11px;color:#778;border-bottom:2px solid #ddd;padding-bottom:4px;margin-top:10px}
+.m-row{display:flex;align-items:center;justify-content:space-between;padding:12px 4px;border-bottom:1px solid #eee}
+.m-row.past{opacity:.45}
+.m-row .nm{font-size:16px}
+.m-row .tk{margin-left:auto;margin-right:18px;background:#aaa;color:#fff;border-radius:5px;padding:4px 10px;font-size:14px}
+.m-row .tk.late{background:#000}
+.m-row .tm{font-size:22px;text-align:right;min-width:4.2em;font-variant-numeric:tabular-nums}
+.m-row .tm s{display:block;font-size:17px;color:#444;text-decoration-color:#ff4b4b;text-decoration-thickness:2px}
+.m-row .tm.late{color:#111}
+
+#fatal{position:fixed;inset:0;background:#fff;z-index:100;display:grid;place-items:center;text-align:center;padding:24px;font-size:16px;line-height:1.7}
+#toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#222;color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;z-index:200}
+#toast.on{opacity:.95}
+
+.sthit{cursor:pointer}
+.numa{font-size:8px;font-weight:700;fill:#1d2a66;text-anchor:middle}
+.numb{font-size:15px;font-weight:700;fill:#1d2a66;text-anchor:middle}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:70;display:grid;place-items:center}
+.dlg{background:#fff;border-radius:12px;padding:16px;width:min(340px,92vw)}
+.dlg label{display:block;font-size:13px;font-weight:700;margin:10px 0 4px}
+.dlg input{width:100%;padding:7px 8px;border:1px solid #aab;border-radius:6px;font-size:15px}
+.dlg .row{display:flex;gap:8px;align-items:center;margin-top:12px}
+.ttlist{margin-top:8px}
+.ttrow{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #eee;font-size:14px}
+.btn.sm{margin:0;padding:3px 10px;font-size:12px}
+
+#diaSel{background:#4f5b6e;color:#fff;max-width:11em}
+#diaSel option{color:#000}
+</style>
+</head>
+<body>
+<header id="topbar">
+  <div id="ttl">在線表示</div>
+  <select id="diaSel" class="chip" hidden aria-label="表示ダイヤ"></select>
+  <div id="clock">--:--:--</div>
+  <div id="expiry"></div>
+  <button id="me" class="chip" type="button">運転士ID: 未設定</button>
+</header>
+
+<main id="view">
+  <div id="empty" hidden>
+    <p>ダイヤ(.oud2)がまだ読み込まれていません。</p>
+    <button class="btn" id="goLoad" type="button">.oud2 を読み込む</button>
+  </div>
+  <svg id="map" role="img" aria-label="在線表示"></svg>
+</main>
+
+<div id="fatal" hidden></div>
+
+<!-- 右下ボタン -->
+<div id="fabs">
+  <button id="btnOps" class="fab text" type="button">運番</button>
+  <button id="btnSet" class="fab" type="button" aria-label="設定">
+    <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="3.2" stroke-dasharray="3.4 3.4"/>
+      <circle cx="12" cy="12" r="7" fill="currentColor"/>
+      <circle cx="12" cy="12" r="3" fill="var(--fab-bg)"/>
+    </svg>
+  </button>
+</div>
+
+<!-- 設定パネル -->
+<section id="panelSet" class="panel" hidden>
+  <div class="panel-head"><strong>設定</strong><button class="x" data-close="panelSet" type="button">閉じる</button></div>
+  <nav class="tabs">
+    <button data-tab="tDiscord" class="on" type="button">Discord</button>
+    <button data-tab="tId" type="button">参加者ID</button>
+    <button data-tab="tOud" type="button">.oud2</button>
+    <button data-tab="tTT" type="button">時刻表</button>
+    <button data-tab="tTest" type="button">テスト</button>
+  </nav>
+
+  <div id="tDiscord" class="tab on">
+    <label>DiscordサーバーID</label>
+    <input id="inGuild" inputmode="numeric" placeholder="例: 123456789012345678" autocomplete="off">
+    <button class="btn" id="saveGuild" type="button">保存</button>
+    <p class="note">Botの /delay コマンドはこのサーバーIDのルームに反映されます。Discordから発行したルームは自動で設定済みです。</p>
+  </div>
+
+  <div id="tId" class="tab">
+    <label>参加者ID（運転士の呼び名・7文字以内）</label>
+    <input id="inName" placeholder="例: たろう" autocomplete="off">
+    <button class="btn" id="saveName" type="button">保存</button>
+    <p class="note">この端末（localStorage）に保存され、ルームの参加者一覧にも登録されます。</p>
+    <label>ルーム参加者</label>
+    <div id="plist" class="plist"></div>
+  </div>
+
+  <div id="tOud" class="tab">
+    <label>ダイヤファイル (.oud2)</label>
+    <input id="inFile" type="file" accept=".oud2,.oud,text/plain">
+    <div id="fileInfo" class="note"></div>
+    <button class="btn" id="saveOud" type="button" disabled>ルームに保存</button>
+    <p class="note">ブラウザ内で解析し、全列車の運番・種別・時刻をFirebaseに保存します。文字コードはUTF-8/Shift_JISを自動判別します。</p>
+    <div id="oudMeta" class="note"></div>
+  </div>
+
+  <div id="tTT" class="tab">
+    <p class="note">各駅の時刻表を画像(PNG)で保存します（4〜23時＋0〜3時）。駅名・ナンバリングは路線図の駅名をタップして編集できます。</p>
+    <button class="btn" id="ttAll" type="button">全駅を1枚ずつ順にダウンロード</button>
+    <div id="ttList" class="ttlist"></div>
+  </div>
+
+  <div id="tTest" class="tab">
+    <label><input type="checkbox" id="simOn"> テスト時刻を使う（この端末のみ）</label>
+    <input id="simTime" type="time" step="1" value="20:00:00">
+    <label>速度</label>
+    <select id="simSpeed"><option value="1">x1</option><option value="5">x5</option><option value="10">x10</option><option value="30">x30</option><option value="60">x60</option></select>
+    <button class="btn" id="simApply" type="button">適用</button>
+    <p class="note">本番は日本時間(JST)の現在時刻で動きます。動作確認用です。</p>
+  </div>
+</section>
+
+<!-- 運番設定パネル -->
+<section id="panelOps" class="panel wide" hidden>
+  <div class="panel-head"><strong>運番設定（乗務員アサイン）</strong><button class="x" data-close="panelOps" type="button">閉じる</button></div>
+  <input id="opsFilter" placeholder="運番・駅名で絞り込み" autocomplete="off">
+  <div class="tblwrap">
+    <table id="opsTbl">
+      <thead><tr><th>運番</th><th>種別</th><th>始発 → 終点</th><th>運転士</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- 列車詳細モーダル -->
+<div id="modal" hidden>
+  <div class="sheet">
+    <button class="x close" id="mClose" type="button">閉じる</button>
+    <div id="mBody"></div>
+  </div>
+</div>
+
+<!-- 駅名編集 -->
+<div id="stEdit" hidden class="overlay">
+  <div class="dlg">
+    <strong>駅の表示を編集</strong>
+    <div id="seOrig" class="note"></div>
+    <label>ナンバリング（例: KK04）</label>
+    <input id="seNum" maxlength="8" autocomplete="off">
+    <label>駅名</label>
+    <input id="seName" maxlength="12" autocomplete="off">
+    <div class="row">
+      <button class="btn" id="seSave" type="button">保存</button>
+      <button class="x" id="seReset" type="button">元に戻す</button>
+      <button class="x" id="seCancel" type="button">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

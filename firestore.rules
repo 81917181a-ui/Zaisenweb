@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ルームは作成から3日(expiresAt)を過ぎると読み書きとも不可になる
+    function alive(roomId) {
+      return request.time < get(/databases/$(database)/documents/rooms/$(roomId)).data.expiresAt;
+    }
+
+    match /rooms/{roomId} {
+      // ルームIDは推測不能な乱数。URLを知っている人だけがアクセスできる。一覧取得は不可。
+      allow get: if request.time < resource.data.expiresAt;
+      allow list, create, delete: if false;   // 作成/削除は Bot(Admin SDK) のみ
+      allow update: if request.time < resource.data.expiresAt
+        && request.resource.data.expiresAt == resource.data.expiresAt
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['guildId', 'assignments', 'delays', 'oudMeta', 'stationEdits', 'diaIndex', 'updatedAt'])
+        && request.resource.data.guildId is string
+        && request.resource.data.guildId.size() <= 32;
+
+      match /data/{docId} {
+        allow get: if alive(roomId);
+        allow create, update: if alive(roomId)
+          && request.resource.data.keys().hasOnly(['json', 'updatedAt'])
+          && request.resource.data.json is string
+          && request.resource.data.json.size() < 950000;
+      }
+
+      match /participants/{pid} {
+        allow read, delete: if alive(roomId);
+        allow create, update: if alive(roomId)
+          && request.resource.data.keys().hasOnly(['name', 'updatedAt'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() <= 14;   // 画面側で7文字(サロゲート対策で余裕を持たせる)
+      }
+    }
+  }
+}
