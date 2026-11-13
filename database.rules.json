@@ -1,0 +1,104 @@
+{
+  "rules": {
+    "rooms": {
+      ".read": true,
+      ".write": true
+    },
+    "bannedIps": {
+      ".read": true,
+      ".write": true
+    },
+    "ip_history": {
+      ".read": true,
+      ".write": true
+    },
+    "usernames": {
+      ".read": true,
+      ".write": true
+    },
+    "logs": {
+      ".read": true,
+      ".write": true
+    },
+    "zaisen": {
+      "rooms": {
+        ".indexOn": [
+          "guildId",
+          "expiresAt"
+        ],
+        "$roomId": {
+          ".read": "data.child('expiresAt').val() > now",
+          "guildId": {
+            ".write": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now",
+            ".validate": "newData.isString() && newData.val().length <= 32"
+          },
+          "assignments": {
+            "$k": {
+              ".write": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now",
+              ".validate": "newData.isString() && newData.val().length <= 14"
+            }
+          },
+          "delays": {
+            "$k": {
+              ".write": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now",
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999"
+            }
+          },
+          "stationEdits": {
+            "$k": {
+              ".write": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now",
+              "num": {
+                ".validate": "newData.isString() && newData.val().length <= 16"
+              },
+              "name": {
+                ".validate": "newData.isString() && newData.val().length <= 24"
+              }
+            }
+          },
+          "oudMeta": {
+            ".write": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now"
+          },
+          "diaIndex": {
+            ".write": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now",
+            ".validate": "newData.isNumber()"
+          },
+          "updatedAt": {
+            ".write": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now"
+          }
+        }
+      },
+      "oud": {
+        "$roomId": {
+          ".read": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now",
+          ".write": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now",
+          "json": {
+            ".validate": "newData.isString() && newData.val().length < 900000"
+          },
+          "updatedAt": {
+            ".validate": true
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "participants": {
+        "$roomId": {
+          ".read": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now",
+          "$pid": {
+            ".write": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length <= 14"
+            },
+            "updatedAt": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      }
+    }
+  }
+}
