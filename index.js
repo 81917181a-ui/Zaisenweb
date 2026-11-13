@@ -72,9 +72,12 @@ const commands = [
 ].map((c) => c.toJSON());
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-const registerFor = (g) => g.commands.set(commands).catch((e) => console.error('register', g.id, e.message));
+const registerFor = (g) => g.commands.set(commands)
+  .then(() => console.log('commands registered:', g.name, g.id))
+  .catch((e) => console.error('register FAILED:', g.name, g.id, e.message, '→ 招待時に applications.commands が必要'));
 client.once('ready', async () => {
-  console.log('ready', client.user.tag, BASE);
+  console.log('ready', client.user.tag, 'servers:', client.guilds.cache.size, BASE);
+  if (!client.guilds.cache.size) console.warn('Bot はどのサーバーにも参加していません。招待URLで追加してください。');
   for (const g of client.guilds.cache.values()) await registerFor(g);
 });
 client.on('guildCreate', registerFor);
@@ -169,4 +172,5 @@ setInterval(() => {
   fetch(SELF_URL + '/health').then((r) => console.log('self-ping', r.status)).catch((e) => console.error('self-ping failed', e.message));
 }, 10 * 60 * 1000);
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.DISCORD_TOKEN).catch((e) => console.error('Discord login FAILED:', e.message, '→ DISCORD_TOKEN を確認'));
+process.on('unhandledRejection', (e) => console.error('unhandledRejection', e));
