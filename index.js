@@ -48,6 +48,14 @@ async function findUserRoom(userId) {
   const snap = await db.ref(`zaisen/userRooms/${userId}`).get();
   return snap.exists() ? getRoomById(snap.val().roomId) : null;
 }
+const urCache = new Map();
+async function cachedUserRoom(uid) {
+  const c = urCache.get(uid);
+  if (c && Date.now() - c.t < 15000) return c.room;
+  const room = await findUserRoom(uid);
+  urCache.set(uid, { t: Date.now(), room });
+  return room;
+}
 const registerUser = (userId, roomId) => db.ref(`zaisen/userRooms/${userId}`).set({ roomId, joinedAt: TS() });
 const roomUrl = (id) => `${BASE}/?room=${id}`;
 
@@ -98,12 +106,14 @@ client.on('interactionCreate', async (i) => {
   try {
     if (!i.guildId) return;
     if (i.isAutocomplete()) {
-      const room = await findUserRoom(i.user.id);
+      const room = await cachedUserRoom(i.user.id);
       const q = String(i.options.getFocused()).toLowerCase();
       const list = room ? (await trainNos(room)).filter((n) => n.toLowerCase().includes(q)).slice(0, 25) : [];
       return i.respond(list.map((n) => ({ name: n, value: n })));
     }
     if (!i.isChatInputCommand()) return;
+    // 先に「応答中…」を表示して、処理が遅くても「応答しませんでした」にならないようにする
+    await i.deferReply(['join', 'link'].includes(i.commandName) ? { flags: ephemeral } : {});
 
     if (i.commandName === 'room') {
       const id = randomBytes(18).toString('base64url');
@@ -116,46 +126,49 @@ client.on('interactionCreate', async (i) => {
         updatedAt: TS(),
       });
       await registerUser(i.user.id, id);
-      return i.reply(`在線表示ルームを発行しました。（あなたは自動で登録済み）\n${roomUrl(id)}\n有効期限: ${jst.format(now + TTL_MS)} JST（3日間）\n設定パネル(歯車)の「.oud2」タブからダイヤを読み込んでください。\n他の人は \`/join\` にこのURLを貼ると登録され、/delay が使えます。`);
+      return i.editReply(`在線表示ルームを発行しました。（あなたは自動で登録済み）\n${roomUrl(id)}\n有効期限: ${jst.format(now + TTL_MS)} JST（3日間）\n設定パネル(歯車)の「.oud2」タブからダイヤを読み込んでください。\n他の人は \`/join\` にこのURLを貼ると登録され、/delay が使えます。`);
     }
 
     if (i.commandName === 'join') {
       const raw = i.options.getString('room', true).trim();
       const id = (/[?&]room=([A-Za-z0-9_-]+)/.exec(raw) || /^([A-Za-z0-9_-]{8,64})$/.exec(raw) || [])[1];
       const target = id ? await getRoomById(id) : null;
-      if (!target) return i.reply({ content: 'ルームが見つからないか、有効期限（3日）が切れています。URLを確認してください。', flags: ephemeral });
+      if (!target) return i.editReply('ルームが見つからないか、有効期限（3日）が切れています。URLを確認してください。');
       await registerUser(i.user.id, target.id);
-      return i.reply({ content: `ルームに登録しました。以後あなたの /delay はこのルームに反映されます。\n${roomUrl(target.id)}\n有効期限: ${jst.format(target.v.expiresAt)} JST`, flags: ephemeral });
+      return i.editReply(`ルームに登録しました。以後あなたの /delay はこのルームに反映されます。\n${roomUrl(target.id)}\n有効期限: ${jst.format(target.v.expiresAt)} JST`);
     }
 
     const room = await findUserRoom(i.user.id);
-    if (!room) return i.reply({ content: '登録されている有効なルームがありません。/room で発行するか、/join でルームのURLを登録してください。', flags: ephemeral });
+    if (!room) return i.editReply('登録されている有効なルームがありません。/room で発行するか、/join でルームのURLを登録してください。');
 
     if (i.commandName === 'link') {
-      return i.reply({ content: `${roomUrl(room.id)}\n有効期限: ${jst.format(room.v.expiresAt)} JST`, flags: ephemeral });
+      return i.editReply(`${roomUrl(room.id)}\n有効期限: ${jst.format(room.v.expiresAt)} JST`);
     }
 
     if (i.commandName === 'delay') {
       const train = i.options.getString('train', true).trim();
       const min = i.options.getInteger('minutes', true);
       const trains = (await loadTrains(room)).filter((t) => t.no === train);
-      if (!trains.length) return i.reply({ content: `運番「${train}」はダイヤにありません。（候補は入力補完に出ます）`, flags: ephemeral });
+      if (!trains.length) return i.editReply(`運番「${train}」はダイヤにありません。（候補は入力補完に出ます）`);
       const start = Math.min(...trains.map((t) => t.stops[0][2])), end = Math.max(...trains.map((t) => t.stops[t.stops.length - 1][2]));
       const now = jstNow();
       const state = now < start ? '（まだ出発前です。出発がその分遅れます）' : now > end ? '（すでに終着済みのため、まもなく自動で0に戻ります）' : '';
       await room.ref.update({ [`delays/${safeKey(train)}`]: min, updatedAt: TS() });
-      return i.reply(min === 0 ? `${train} の遅延を解除しました。` : `${train} を **+${min}分** 遅延に設定しました。${state}\n終点到着後は自動で遅延0に戻り、折り返し列車も遅延0で出発します。`);
+      return i.editReply(min === 0 ? `${train} の遅延を解除しました。` : `${train} を **+${min}分** 遅延に設定しました。${state}\n終点到着後は自動で遅延0に戻り、折り返し列車も遅延0で出発します。`);
     }
 
     if (i.commandName === 'delayclear') {
       const train = i.options.getString('train');
       if (train) await room.ref.update({ [`delays/${safeKey(train.trim())}`]: 0, updatedAt: TS() });
       else await room.ref.update({ delays: null, updatedAt: TS() });
-      return i.reply(train ? `${train} の遅延を解除しました。` : '全列車の遅延を解除しました。');
+      return i.editReply(train ? `${train} の遅延を解除しました。` : '全列車の遅延を解除しました。');
     }
   } catch (e) {
     console.error(e);
-    if (i.isRepliable() && !i.replied && !i.deferred) i.reply({ content: 'エラーが発生しました。', flags: ephemeral }).catch(() => {});
+    const msg = 'エラーが発生しました。しばらくしてからもう一度お試しください。';
+    if (i.isAutocomplete?.()) i.respond([]).catch(() => {});
+    else if (i.deferred) i.editReply(msg).catch(() => {});
+    else if (i.isRepliable?.() && !i.replied) i.reply({ content: msg, flags: ephemeral }).catch(() => {});
   }
 });
 
