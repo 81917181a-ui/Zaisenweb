@@ -102,6 +102,11 @@ td select{max-width:9em;padding:4px;border:1px solid #aab;border-radius:6px;font
 
 #diaSel{background:#4f5b6e;color:#fff;max-width:11em}
 #diaSel option{color:#000}
+.prow{border:1px solid #dde;border-radius:8px;padding:8px;margin-bottom:8px}
+.prow label{margin:4px 0 2px!important}
+.prow .x{margin-top:6px}
+.prow-btns{display:flex;gap:8px;align-items:center;margin-top:4px}
+.prow-btns .btn{margin:0}
 </style>
 </head>
 <body>
@@ -109,15 +114,9 @@ td select{max-width:9em;padding:4px;border:1px solid #aab;border-radius:6px;font
   <div id="ttl">在線表示</div>
   <select id="diaSel" class="chip" hidden aria-label="表示ダイヤ"></select>
   <div id="clock">--:--:--</div>
-  <div id="expiry"></div>
-  <button id="me" class="chip" type="button">運転士ID: 未設定</button>
 </header>
 
 <main id="view">
-  <div id="empty" hidden>
-    <p>ダイヤ(.oud2)がまだ読み込まれていません。</p>
-    <button class="btn" id="goLoad" type="button">.oud2 を読み込む</button>
-  </div>
   <svg id="map" role="img" aria-label="在線表示"></svg>
 </main>
 
@@ -141,7 +140,7 @@ td select{max-width:9em;padding:4px;border:1px solid #aab;border-radius:6px;font
   <nav class="tabs">
     <button data-tab="tDiscord" class="on" type="button">Discord</button>
     <button data-tab="tId" type="button">参加者ID</button>
-    <button data-tab="tOud" type="button">.oud2</button>
+    <button data-tab="tOud" type="button">ダイヤ読み込み(.oud2から）</button>
     <button data-tab="tTT" type="button">時刻表</button>
     <button data-tab="tTest" type="button">テスト</button>
   </nav>
@@ -150,40 +149,35 @@ td select{max-width:9em;padding:4px;border:1px solid #aab;border-radius:6px;font
     <label>DiscordサーバーID</label>
     <input id="inGuild" inputmode="numeric" placeholder="例: 123456789012345678" autocomplete="off">
     <button class="btn" id="saveGuild" type="button">保存</button>
-    <p class="note">サーバーIDは記録用です。Botの /delay は、Discordで <b>/join</b> にこのページのURLを貼って登録した人のルームに反映されます（/room で発行した人は自動登録）。</p>
+    <p class="note">登録されてるディスコードIDのサーバーで/delayなど使ったら反映されます。</p>
   </div>
 
   <div id="tId" class="tab">
-    <label>参加者ID（運転士の呼び名・7文字以内）</label>
-    <input id="inName" placeholder="例: たろう" autocomplete="off">
-    <button class="btn" id="saveName" type="button">保存</button>
-    <p class="note">この端末（localStorage）に保存され、ルームの参加者一覧にも登録されます。</p>
-    <label>ルーム参加者</label>
-    <div id="plist" class="plist"></div>
+    <div id="prows"></div>
+    <div class="prow-btns">
+      <button class="x" id="pAdd" type="button">＋ 人数追加</button>
+      <button class="btn" id="pSave" type="button">保存</button>
+    </div>
+    <p class="note">参加者ID書いて運番割り当てたら、本人がディスコードサーバーでコマンド書いた際に遅れなどが反映されます。</p>
   </div>
 
   <div id="tOud" class="tab">
-    <label>ダイヤファイル (.oud2)</label>
-    <input id="inFile" type="file" accept=".oud2,.oud,text/plain">
+    <label>ファイル読み込み</label>
+    <input id="inFile" type="file">
     <div id="fileInfo" class="note"></div>
-    <button class="btn" id="saveOud" type="button" disabled>ルームに保存</button>
-    <p class="note">ブラウザ内で解析し、全列車の運番・種別・時刻をFirebaseに保存します。文字コードはUTF-8/Shift_JISを自動判別します。</p>
     <div id="oudMeta" class="note"></div>
   </div>
 
   <div id="tTT" class="tab">
-    <p class="note">各駅の時刻表を画像(PNG)で保存します（4〜23時＋0〜3時）。駅名・ナンバリングは路線図の駅名をタップして編集できます。</p>
-    <button class="btn" id="ttAll" type="button">全駅を1枚ずつ順にダウンロード</button>
-    <div id="ttList" class="ttlist"></div>
+    <button class="btn" id="ttAll" type="button">時刻表作成</button>
   </div>
 
   <div id="tTest" class="tab">
-    <label><input type="checkbox" id="simOn"> テスト時刻を使う（この端末のみ）</label>
+    <label><input type="checkbox" id="simOn"> この端末だけ時間を変更</label>
     <input id="simTime" type="time" step="1" value="20:00:00">
     <label>速度</label>
     <select id="simSpeed"><option value="1">x1</option><option value="5">x5</option><option value="10">x10</option><option value="30">x30</option><option value="60">x60</option></select>
     <button class="btn" id="simApply" type="button">適用</button>
-    <p class="note">本番は日本時間(JST)の現在時刻で動きます。動作確認用です。</p>
   </div>
 </section>
 
