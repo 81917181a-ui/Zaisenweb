@@ -93,11 +93,19 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const registerFor = (g) => g.commands.set(commands)
   .then(() => console.log('commands registered:', g.name, g.id))
   .catch((e) => console.error('register FAILED:', g.name, g.id, e.message, '→ 招待時に applications.commands が必要'));
-client.once('ready', async () => {
+// discord.js の版によって起動完了のイベント名が違う（ready / clientReady）ので両方で待ち、1回だけ実行する
+let started = false;
+const onReady = async () => {
+  if (started) return;
+  started = true;
   console.log('ready', client.user.tag, 'servers:', client.guilds.cache.size, BASE);
   if (!client.guilds.cache.size) console.warn('Bot はどのサーバーにも参加していません。招待URLで追加してください。');
   for (const g of client.guilds.cache.values()) await registerFor(g);
-});
+};
+client.once('clientReady', onReady);
+client.once('ready', onReady);
+client.on('error', (e) => console.error('client error:', e.message));
+client.on('warn', (m) => console.warn('client warn:', m));
 client.on('guildCreate', registerFor);
 
 const ephemeral = MessageFlags.Ephemeral;
@@ -216,5 +224,6 @@ setInterval(() => {
   fetch(SELF_URL + '/health').then((r) => console.log('self-ping', r.status)).catch((e) => console.error('self-ping failed', e.message));
 }, 10 * 60 * 1000);
 
-client.login(process.env.DISCORD_TOKEN).catch((e) => console.error('Discord login FAILED:', e.message, '→ DISCORD_TOKEN を確認'));
+console.log('Discord にログイン中...', process.env.DISCORD_TOKEN ? '(トークンあり)' : '(トークンが未設定！ DISCORD_TOKEN を確認)');
+client.login(process.env.DISCORD_TOKEN).then(() => console.log('Discord login OK')).catch((e) => console.error('Discord login FAILED:', e.message, '→ DISCORD_TOKEN を確認'));
 process.on('unhandledRejection', (e) => console.error('unhandledRejection', e));
