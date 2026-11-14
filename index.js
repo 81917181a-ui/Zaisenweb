@@ -187,21 +187,26 @@ setInterval(() => cleanup().catch(console.error), 3600 * 1000);
 cleanup().catch(console.error);
 
 // Render の Web Service 用ヘルスチェック（/health）。Background Worker なら不要
-const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.ico': 'image/x-icon', '.svg': 'image/svg+xml' };
+// 画面ファイルの置き場所: index.js と同じフォルダ、または public/ フォルダのどちらでも可
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const STATIC = { 'index.html': 'text/html; charset=utf-8', 'app.js': 'text/javascript; charset=utf-8' }; // 配信するのはこの2つだけ
+async function readStatic(name) {
+  for (const dir of [path.join(HERE, 'public'), HERE]) {
+    try { return await fs.readFile(path.join(dir, name)); } catch {}
+  }
+  return null;
+}
 http.createServer(async (req, res) => {
   try {
     const { pathname } = new URL(req.url, 'http://localhost');
     if (pathname === '/health') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('ok'); }
-    let rel = decodeURIComponent(pathname);
-    if (rel.endsWith('/')) rel += 'index.html';
-    const file = path.normalize(path.join(PUBLIC_DIR, rel));
-    if (!file.startsWith(PUBLIC_DIR + path.sep)) { res.writeHead(403); return res.end('forbidden'); }
-    const data = await fs.readFile(file);
-    res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache' });
+    const name = pathname === '/' ? 'index.html' : pathname.slice(1);
+    const data = Object.hasOwn(STATIC, name) ? await readStatic(name) : null;
+    if (!data) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }
+    res.writeHead(200, { 'content-type': STATIC[name], 'cache-control': 'no-cache' });
     res.end(data);
   } catch {
-    res.writeHead(404, { 'content-type': 'text/plain' }); res.end('not found');
+    res.writeHead(500, { 'content-type': 'text/plain' }); res.end('error');
   }
 }).listen(process.env.PORT || 3000);
 
