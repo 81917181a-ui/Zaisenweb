@@ -975,3 +975,8 @@ function autoReset(tr, now, shift) {
     .then(() => { if (tr.nextNo && delayOf(tr.nextNo) > 0) return setDelay(tr.nextNo, 0); })
     .catch(() => clearing.delete(tr.no));
 }
+
+/* ================= このページを開いている間は、サーバー(Bot)を起こし続ける ================= */
+// ページが4分ごとに自分のサーバーの /health にアクセスする（無料枠は約15分アクセスが無いとスリープするため）
+const keepAlive = () => fetch('/health', { cache: 'no-store' }).catch(() => {});
+setInterval(keepAlive, 4 * 60 * 1000);
