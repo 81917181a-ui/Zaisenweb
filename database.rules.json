@@ -95,6 +95,9 @@
             },
             "$other": {
               ".validate": false
+            },
+            "discordId": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9]{15,22}$/)"
             }
           }
         }
