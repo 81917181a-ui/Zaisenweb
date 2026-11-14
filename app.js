@@ -533,8 +533,8 @@ const S = {
   roomId: new URLSearchParams(location.search).get('room') || location.hash.replace('#', ''),
   room: null, oud: null, layout: null, trains: [], participants: [], icons: new Map(),
   selected: null, pending: null,
-  myName: localStorage.getItem('zaisen.name') || '',
-  clientId: localStorage.getItem('zaisen.cid') || (() => { const c = crypto.randomUUID(); localStorage.setItem('zaisen.cid', c); return c; })(),
+  myName: '',
+  partRows: [],
 };
 let sim = null; // テスト時刻 {realStart, simStart, speed}
 const nowSec = () => (sim ? sim.simStart + ((Date.now() - sim.realStart) / 1000) * sim.speed : realJstSec());
@@ -552,7 +552,7 @@ const db = getDatabase(initializeApp(firebaseConfig));
 const roomRef = ref(db, `zaisen/rooms/${S.roomId}`);
 const oudRef = ref(db, `zaisen/oud/${S.roomId}`);
 const partsRef = ref(db, `zaisen/participants/${S.roomId}`);
-const myPartRef = ref(db, `zaisen/participants/${S.roomId}/${S.clientId}`);
+let partDraft = [], partDirty = false;   // 参加者の編集中データ
 const stamp = () => serverTimestamp();
 
 function expiredScreen() {
@@ -566,12 +566,14 @@ unsubs.push(onValue(roomRef, (snap) => {
   onRoomChange();
 }, () => expiredScreen()));
 unsubs.push(onValue(oudRef, (snap) => {
-  if (!snap.exists()) { S.oud = null; $('#empty').hidden = false; $('#map').innerHTML = ''; return; }
+  if (!snap.exists()) { S.oud = null; $('#map').innerHTML = ''; return; }
   try { S.oud = normalizeOud(JSON.parse(snap.val().json)); renderMap(); } catch (e) { toast('ダイヤデータの読み込みに失敗: ' + e.message); }
 }, () => {}));
 unsubs.push(onValue(partsRef, (snap) => {
-  S.participants = Object.values(snap.val() || {}).map((d) => d && d.name).filter(Boolean);
-  renderParticipants(); refreshOpsIfIdle(); if (S.selected != null) renderModal();
+  S.partRows = Object.entries(snap.val() || {}).map(([pid, d]) => ({ pid, name: (d && d.name) || '', discordId: (d && d.discordId) || '' }));
+  S.participants = S.partRows.map((r) => r.name).filter(Boolean);
+  if (!partDirty) { partDraft = S.partRows.map((r) => ({ ...r })); renderPartRows(); }
+  refreshOpsIfIdle(); if (S.selected != null) renderModal();
 }, () => {}));
 
 setInterval(() => {
@@ -590,8 +592,6 @@ const diaIdx = () => Math.min(Math.max(0, Number(S.room?.diaIndex) || 0), (S.oud
 const curTrains = () => S.oud.dias[diaIdx()].trains;
 
 function onRoomChange() {
-  const exp = S.room.expiresAt;
-  $('#expiry').textContent = exp ? `ルーム有効期限: ${jstFmt.format(exp)} JST` : '';
   $('#inGuild').value ||= S.room.guildId || '';
   const m = S.room.oudMeta;
   $('#oudMeta').textContent = m ? `現在のダイヤ: ${m.fileName}（${m.dias ? m.dias + 'ダイヤ / ' : ''}${m.trains}本 / ${m.stations}駅）` : '';
@@ -615,7 +615,6 @@ const svgEl = $('#map');
 
 function renderMap() {
   const oud = S.oud;
-  $('#empty').hidden = true;
   $('#ttl').textContent = oud.name;
   const L = (S.layout = buildLayout(oud));
   S.trains = compileTrains(curTrains(), L);
@@ -662,7 +661,6 @@ function renderMap() {
     const hit = sv('rect', { x: lx - 4, y: nd.y - 26, width: 150, height: 34, fill: 'transparent', class: 'sthit', 'data-node': nd.id }, svgEl);
   }
   gTrains = sv('g', {}, svgEl);
-  renderTtList();
   tick();
 }
 
@@ -826,7 +824,6 @@ function showTab(id) {
   document.querySelectorAll('#panelSet .tab').forEach((t) => t.classList.toggle('on', t.id === id));
 }
 document.querySelectorAll('.tabs button').forEach((b) => b.onclick = () => showTab(b.dataset.tab));
-$('#goLoad').onclick = () => { togglePanel('panelSet', true); showTab('tOud'); };
 
 /* ================= ① DiscordサーバーID ================= */
 $('#saveGuild').onclick = async () => {
@@ -836,44 +833,54 @@ $('#saveGuild').onclick = async () => {
   catch (e) { toast('保存失敗: ' + e.code); }
 };
 
-/* ================= ② 参加者ID ================= */
-function renderMe() { $('#me').textContent = '運転士ID: ' + (S.myName || '未設定'); $('#inName').value = S.myName; }
-function renderParticipants() { $('#plist').innerHTML = [...new Set(S.participants)].sort().map((n) => `<span>${esc(n)}</span>`).join('') || '<span>まだ誰もいません</span>'; }
-$('#saveName').onclick = async () => {
-  const v = $('#inName').value.trim();
-  if (!v) return toast('名前を入力してください');
-  if (strLen(v) > 7) return toast('7文字以内で入力してください');
-  S.myName = v; localStorage.setItem('zaisen.name', v); renderMe();
+/* ================= ② 参加者（Discord ID と呼び名） ================= */
+const newPid = () => 'p' + Math.random().toString(36).slice(2, 10);
+function renderPartRows() {
+  const box = $('#prows'); box.innerHTML = '';
+  partDraft.forEach((r, i) => {
+    const d = document.createElement('div'); d.className = 'prow';
+    d.innerHTML = `<label>参加者Discord ID：</label><input class="pd" inputmode="numeric" autocomplete="off" placeholder="（記入）" value="${esc(r.discordId)}">
+      <label>呼び名：</label><input class="pn" autocomplete="off" placeholder="（記入）" value="${esc(r.name)}">
+      <button class="x pdel" type="button">削除</button>`;
+    d.querySelector('.pd').oninput = (e) => { r.discordId = e.target.value.trim(); partDirty = true; };
+    d.querySelector('.pn').oninput = (e) => { r.name = e.target.value.trim(); partDirty = true; };
+    d.querySelector('.pdel').onclick = () => { partDraft.splice(i, 1); partDirty = true; renderPartRows(); };
+    box.appendChild(d);
+  });
+}
+$('#pAdd').onclick = () => { partDraft.push({ pid: newPid(), name: '', discordId: '' }); partDirty = true; renderPartRows(); };
+$('#pSave').onclick = async () => {
+  const rows = partDraft.filter((r) => r.name || r.discordId);
+  for (const r of rows) {
+    if (!/^\d{15,22}$/.test(r.discordId)) return toast('Discord ID は数字（18桁前後）で入力してください');
+    if (!r.name) return toast('呼び名を入力してください');
+    if (strLen(r.name) > 7) return toast('呼び名は7文字以内です');
+  }
+  if (new Set(rows.map((r) => r.name)).size !== rows.length) return toast('同じ呼び名があります');
+  if (new Set(rows.map((r) => r.discordId)).size !== rows.length) return toast('同じDiscord IDがあります');
+  const up = {};
+  for (const old of S.partRows) if (!rows.some((r) => r.pid === old.pid)) up[old.pid] = null;
+  for (const r of rows) up[r.pid] = { name: r.name, discordId: r.discordId, updatedAt: stamp() };
   try {
-    await set(myPartRef, { name: v, updatedAt: stamp() });
-    toast('参加者IDを保存しました');
-  } catch (e) { toast('登録失敗: ' + e.code); }
+    if (Object.keys(up).length) await update(partsRef, up);
+    partDirty = false; toast('参加者を保存しました');
+  } catch (e) { toast('保存失敗: ' + e.code); }
 };
-$('#me').onclick = () => { togglePanel('panelSet', true); showTab('tId'); };
-renderMe();
-if (S.myName) set(myPartRef, { name: S.myName, updatedAt: stamp() }).catch(() => {});
 
-/* ================= ③ .oud2 読み込み ================= */
+/* ================= ③ ファイル読み込み（選ぶと自動で解析・保存） ================= */
 $('#inFile').onchange = async (e) => {
   const f = e.target.files[0]; if (!f) return;
-  S.pending = null; $('#saveOud').disabled = true;
+  const info = $('#fileInfo'); info.textContent = '読み込み中…';
   try {
     const oud = parseOud2(decodeBuffer(await f.arrayBuffer()));
-    S.pending = { oud, fileName: f.name };
-    const all = oud.dias.flatMap((d) => d.trains);
-    $('#fileInfo').innerHTML = `解析OK: ${esc(oud.name)} / ${oud.stations.length}駅 / ${oud.dias.length}ダイヤ<br>` + oud.dias.map((d) => `・${esc(d.name)}: ${d.trains.length}本（運番${new Set(d.trains.map((t) => t.no)).size}種）`).join('<br>');
-    $('#saveOud').disabled = false;
-  } catch (er) { $('#fileInfo').textContent = '解析失敗: ' + er.message; }
-};
-$('#saveOud').onclick = async () => {
-  if (!S.pending) return;
-  const json = JSON.stringify(S.pending.oud);
-  if (new Blob([json]).size > 900000) return toast('ダイヤが大きすぎます(約900KB上限)');
-  try {
+    const json = JSON.stringify(oud);
+    if (new Blob([json]).size > 900000) { info.textContent = 'ダイヤが大きすぎます（約900KBまで）'; return; }
     await set(oudRef, { json, updatedAt: stamp() });
-    await update(roomRef, { oudMeta: { fileName: S.pending.fileName, dias: S.pending.oud.dias.length, trains: S.pending.oud.dias.reduce((n, d) => n + d.trains.length, 0), stations: S.pending.oud.stations.length }, updatedAt: stamp() });
-    toast('ダイヤをルームに保存しました');
-  } catch (e) { toast('保存失敗: ' + e.code); }
+    await update(roomRef, { oudMeta: { fileName: f.name, dias: oud.dias.length, trains: oud.dias.reduce((n, d) => n + d.trains.length, 0), stations: oud.stations.length }, updatedAt: stamp() });
+    info.innerHTML = `読み込みました: ${esc(oud.name)} / ${oud.stations.length}駅 / ${oud.dias.length}ダイヤ<br>` + oud.dias.map((d) => `・${esc(d.name)}: ${d.trains.length}本（運番${new Set(d.trains.map((t) => t.no)).size}種）`).join('<br>');
+    toast('ダイヤを読み込みました');
+  } catch (er) { info.textContent = '読み込み失敗: ' + (er.code ? '保存できませんでした(' + er.code + ')' : er.message); }
+  e.target.value = '';
 };
 
 /* ================= テスト時刻 ================= */
@@ -910,16 +917,6 @@ $('#seReset').onclick = () => saveStEdit('', S.layout.nodes.get(editNode).name);
 
 /* ================= 駅別時刻表 画像ダウンロード ================= */
 function stationNodes() { return [...S.layout.nodes.values()].filter((n) => n.label).sort((a, b) => a.y - b.y || a.x - b.x); }
-function renderTtList() {
-  const box = $('#ttList'); box.innerHTML = '';
-  if (!S.layout) return;
-  for (const nd of stationNodes()) {
-    const row = document.createElement('div'); row.className = 'ttrow';
-    row.innerHTML = `<span>${esc(stNum(nd.id) ? stNum(nd.id) + ' ' : '')}${esc(stName(nd.id))}</span><button class="btn sm" type="button">画像DL</button>`;
-    row.querySelector('button').onclick = () => dlStation(nd.id);
-    box.appendChild(row);
-  }
-}
 function dlStation(id) {
   const times = collectTimes(S.trains, id, stName, S.oud.types);
   const cv = drawTimetable({ name: stName(id), num: stNum(id), times, types: S.oud.types });
