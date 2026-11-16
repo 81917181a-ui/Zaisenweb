@@ -36,7 +36,8 @@ button{font:inherit;cursor:pointer}
 .fab{width:52px;height:52px;border-radius:50%;border:0;background:var(--fab-bg);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.3);display:grid;place-items:center}
 .fab.text{font-size:14px;font-weight:700}
 
-.panel{position:fixed;right:max(14px,env(safe-area-inset-right));bottom:80px;width:min(380px,calc(100vw - 28px));max-height:calc(100vh - 110px);overflow:auto;background:#fff;border:1px solid #ccd;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.25);padding:12px;z-index:40}
+.panel{position:fixed;right:max(14px,env(safe-area-inset-right));bottom:80px;width:min(380px,calc(100vw - 28px));max-height:calc(100vh - 110px);max-height:calc(100dvh - 110px);overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;background:#fff;border:1px solid #ccd;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.25);padding:0 12px 12px;z-index:40}
+.panel-top{position:sticky;top:0;background:#fff;z-index:2;padding-top:12px;margin:0 -12px;padding-left:12px;padding-right:12px;border-radius:12px 12px 0 0}
 .panel.wide{width:min(720px,calc(100vw - 28px))}
 .panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .x{border:1px solid #bbb;background:#f6f6f6;border-radius:6px;padding:3px 10px;font-size:12px}
@@ -74,6 +75,8 @@ td select{max-width:9em;padding:4px;border:1px solid #aab;border-radius:6px;font
 .m-ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;margin:10px 0}
 .m-ctl button{border:1px solid #99a;background:#f4f5f9;border-radius:6px;padding:4px 10px}
 .m-ctl select{padding:4px;border:1px solid #99a;border-radius:6px}
+.m-ctl input[type=number]{width:72px;padding:5px 6px;border:1px solid #99a;border-radius:6px;font-size:16px;text-align:center}
+.m-ctl .u{font-size:13px;margin-left:-4px}
 .m-cap{text-align:right;font-size:11px;color:#778;border-bottom:2px solid #ddd;padding-bottom:4px;margin-top:10px}
 .m-row{display:flex;align-items:center;justify-content:space-between;padding:12px 4px;border-bottom:1px solid #eee}
 .m-row.past{opacity:.45}
@@ -136,6 +139,7 @@ td select{max-width:9em;padding:4px;border:1px solid #aab;border-radius:6px;font
 
 <!-- 設定パネル -->
 <section id="panelSet" class="panel" hidden>
+  <div class="panel-top">
   <div class="panel-head"><strong>設定</strong><button class="x" data-close="panelSet" type="button">閉じる</button></div>
   <nav class="tabs">
     <button data-tab="tDiscord" class="on" type="button">Discord</button>
@@ -144,6 +148,7 @@ td select{max-width:9em;padding:4px;border:1px solid #aab;border-radius:6px;font
     <button data-tab="tTT" type="button">時刻表</button>
     <button data-tab="tTest" type="button">テスト</button>
   </nav>
+  </div>
 
   <div id="tDiscord" class="tab on">
     <label>DiscordサーバーID</label>
@@ -183,7 +188,7 @@ td select{max-width:9em;padding:4px;border:1px solid #aab;border-radius:6px;font
 
 <!-- 運番設定パネル -->
 <section id="panelOps" class="panel wide" hidden>
-  <div class="panel-head"><strong>運番設定（乗務員アサイン）</strong><button class="x" data-close="panelOps" type="button">閉じる</button></div>
+  <div class="panel-top"><div class="panel-head"><strong>運番設定（乗務員アサイン）</strong><button class="x" data-close="panelOps" type="button">閉じる</button></div></div>
   <input id="opsFilter" placeholder="運番・駅名で絞り込み" autocomplete="off">
   <div class="tblwrap">
     <table id="opsTbl">
