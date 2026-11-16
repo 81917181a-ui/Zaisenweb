@@ -252,8 +252,11 @@ async function readStatic(name) {
   }
   return null;
 }
+// スリープ判定用: 外部アクセスと自己アクセスの最終時刻
+let lastExternalAt = Date.now(), lastSelfAt = 0;
 http.createServer(async (req, res) => {
   try {
+    if (req.headers['x-self-ping']) lastSelfAt = Date.now(); else lastExternalAt = Date.now();
     const { pathname } = new URL(req.url, 'http://localhost');
     if (pathname === '/health') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('ok'); }
     const name = pathname === '/' ? 'index.html' : pathname.slice(1);
@@ -269,9 +272,37 @@ http.createServer(async (req, res) => {
 // スリープ防止: 起動中は10分ごとに自分の公開URLへアクセス（RENDER_EXTERNAL_URL は Render が自動設定）
 const SELF_URL = (process.env.RENDER_EXTERNAL_URL || 'https://zaisenweb.onrender.com').replace(/\/$/, '');
 setInterval(() => {
-  fetch(SELF_URL + '/health').then((r) => console.log('self-ping', r.status)).catch((e) => console.error('self-ping failed', e.message));
+  fetch(SELF_URL + '/health', { headers: { 'x-self-ping': '1' } }).then((r) => console.log('self-ping', r.status)).catch((e) => console.error('self-ping failed', e.message));
 }, 10 * 60 * 1000);
 
 console.log('Discord にログイン中...', process.env.DISCORD_TOKEN ? '(トークンあり)' : '(トークンが未設定！ DISCORD_TOKEN を確認)');
-client.login(process.env.DISCORD_TOKEN).then(() => console.log('Discord login OK')).catch((e) => console.error('Discord login FAILED:', e.message, '→ DISCORD_TOKEN を確認'));
+client.login(process.env.DISCORD_TOKEN).then(() => console.log('Discord login OK')).catch((e) => {
+  console.error('Discord login FAILED:', e.message, '→ DISCORD_TOKEN を確認');
+  setTimeout(() => process.exit(1), 5000); // 落として再起動に任せる
+});
 process.on('unhandledRejection', (e) => console.error('unhandledRejection', e));
+
+// 自動再起動: 想定外の例外は記録して終了し、ホスティング側(AUTORESTART / Render)に再起動させる
+process.on('uncaughtException', (e) => {
+  console.error('uncaughtException → 終了して再起動を待ちます:', e);
+  setTimeout(() => process.exit(1), 1000);
+});
+// 見張り: Discord に5分以上つながらない状態が続いたら終了して再起動させる
+let notReadySince = 0;
+setInterval(() => {
+  if (client.isReady()) { notReadySince = 0; return; }
+  if (!notReadySince) notReadySince = Date.now();
+  if (Date.now() - notReadySince > 5 * 60 * 1000) {
+    console.error('Discord に5分以上つながらないため終了します(自動再起動を期待)');
+    process.exit(1);
+  }
+}, 60 * 1000);
+
+// 停止の合図（Render がスリープ/デプロイで止める直前）: 状況をログに残し、Discord から正常に切断する
+process.on('SIGTERM', async () => {
+  const ago = (t) => (t ? `${Math.round((Date.now() - t) / 60000)}分前` : 'なし');
+  console.log(`SIGTERM(停止の合図): 稼働${Math.round(process.uptime() / 60)}分 / 最後の外部アクセス ${ago(lastExternalAt)} / 最後の自己アクセス ${ago(lastSelfAt)}`);
+  console.log('→ 稼働が短ければデプロイ、外部アクセスが約15分前ならスリープ。自己アクセスが直近でも止まったなら、自己アクセスは数えられていません。');
+  try { await client.destroy(); } catch {}
+  process.exit(0);
+});
