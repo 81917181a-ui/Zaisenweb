@@ -276,6 +276,20 @@ setInterval(() => {
 }, 10 * 60 * 1000);
 
 console.log('Discord にログイン中...', process.env.DISCORD_TOKEN ? '(トークンあり)' : '(トークンが未設定！ DISCORD_TOKEN を確認)');
+// 診断: ログインが進まない原因(Discord 側のブロック・レート制限・トークン不正)をログに出す
+client.on('debug', (m) => { if (!/Heartbeat|heartbeat/.test(m)) console.log('[discord debug]', String(m).slice(0, 200)); });
+client.rest.on('rateLimited', (i) => console.error('[discord rateLimited]', i.route, 'retry', i.timeToReset, 'ms', i.global ? '(global)' : ''));
+client.on('invalidated', () => { console.error('セッション無効化 → 終了して再起動'); process.exit(1); });
+(async () => {
+  try {
+    const r = await fetch('https://discord.com/api/v10/users/@me', { headers: { Authorization: 'Bot ' + (process.env.DISCORD_TOKEN || '') } });
+    const body = (await r.text()).slice(0, 160).replace(/\s+/g, ' ');
+    console.log('[診断] Discord API /users/@me →', r.status, body);
+    if (r.status === 401) console.error('[診断] トークンが正しくありません。Developer Portal で Reset Token して Render の DISCORD_TOKEN を更新');
+    if (r.status === 429 || /cloudflare|1015|banned/i.test(body)) console.error('[診断] Render の IP が Discord(Cloudflare) に制限されています。サービスの再起動/Region 変更、または別ホスティングが必要');
+  } catch (e) { console.error('[診断] Discord API に到達できません:', e.message); }
+})();
+setTimeout(() => { if (!client.isReady()) console.error('[診断] 60秒たってもログイン未完了。上の [discord debug] / [診断] を確認'); }, 60000);
 client.login(process.env.DISCORD_TOKEN).then(() => console.log('Discord login OK')).catch((e) => {
   console.error('Discord login FAILED:', e.message, '→ DISCORD_TOKEN を確認');
   setTimeout(() => process.exit(1), 5000); // 落として再起動に任せる
