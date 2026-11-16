@@ -114,7 +114,7 @@ const commands = [
     .addStringOption((o) => o.setName('room').setDescription('ルームのURL（/link で出るもの）').setRequired(true)),
   new SlashCommandBuilder().setName('link').setDescription('作った部屋のコード'),
   new SlashCommandBuilder().setName('delay').setDescription('電車を遅らせる')
-    .addIntegerOption((o) => o.setName('minutes').setDescription('遅れる分数（0で解除）').setRequired(true).setMinValue(0).setMaxValue(999))
+    .addIntegerOption((o) => o.setName('minutes').setDescription('遅れる分数（マイナスは早い、0で解除）').setRequired(true).setMinValue(-99).setMaxValue(999))
     .addStringOption((o) => o.setName('train').setDescription('運番（省略すると自分の担当）').setAutocomplete(true)),
   new SlashCommandBuilder().setName('delayclear').setDescription('遅延コマンドの削除')
     .addStringOption((o) => o.setName('train').setDescription('運番（省略すると自分の担当。担当がなければ全列車）').setAutocomplete(true)),
@@ -200,7 +200,7 @@ client.on('interactionCreate', async (i) => {
       const now = jstNow();
       const state = now < start ? '（まだ出発前です。出発がその分遅れます）' : now > end ? '（すでに終着済みのため、まもなく自動で0に戻ります）' : '';
       await room.ref.update({ [`delays/${safeKey(train)}`]: min, updatedAt: TS() });
-      return i.editReply(min === 0 ? `${train} の遅延を解除しました。` : `${train} を **+${min}分** 遅延に設定しました。${state}\n終点到着後は自動で遅延0に戻り、折り返し列車も遅延0で出発します。`);
+      return i.editReply(min === 0 ? `${train} の遅延を解除しました。` : `${train} を **${min > 0 ? "+" + min : "\u2212" + (-min)}分**${min < 0 ? "（早発）" : " 遅延"}に設定しました。${state}\n終点到着後は自動で遅延0に戻り、折り返し列車も遅延0で出発します。`);
     }
 
     if (i.commandName === 'delayclear') {
