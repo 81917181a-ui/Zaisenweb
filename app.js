@@ -602,7 +602,7 @@ function onRoomChange() {
 }
 
 async function setDelay(no, min) {
-  min = Math.max(0, Math.min(999, Math.round(min)));
+  min = Math.max(-99, Math.min(999, Math.round(Number(min) || 0)));
   await update(roomRef, { ['delays/' + safeKey(no)]: min, updatedAt: stamp() });
 }
 async function setDriver(no, name) {
@@ -675,11 +675,13 @@ function iconGroup(tr, d, mine) {
   sv('polygon', { points: '5,19 15,19 10,25', fill: c }, g);
   sv('rect', { x: -19, y: -19, width: 38, height: 38, rx: 9, fill: c, stroke: mine ? '#111' : 'none', 'stroke-width': 3 }, g);
   const t = sv('text', { x: 0, y: 1, class: 'ibtxt' }, g); t.textContent = T.abbr;
-  if (d > 0) {
-    const by = up ? -56 : -42;
-    sv('path', { d: `M-5 ${by + 11}L0 ${by + 17}L5 ${by + 11}Z`, fill: '#fde4e4' }, g);
-    sv('rect', { x: -22, y: by - 11, width: 44, height: 22, rx: 11, fill: '#fde4e4', stroke: '#f2a6a6', 'stroke-width': 1.5 }, g);
-    const dt = sv('text', { x: 0, y: by, class: 'dly' }, g); dt.textContent = '+' + d;
+  if (d !== 0) {
+    const by = up ? -56 : -42, early = d < 0;
+    const bg = early ? '#e3f0fb' : '#fde4e4', bd = early ? '#9cc4e8' : '#f2a6a6';
+    sv('path', { d: `M-5 ${by + 11}L0 ${by + 17}L5 ${by + 11}Z`, fill: bg }, g);
+    sv('rect', { x: -22, y: by - 11, width: 44, height: 22, rx: 11, fill: bg, stroke: bd, 'stroke-width': 1.5 }, g);
+    const dt = sv('text', { x: 0, y: by, class: 'dly' }, g); dt.textContent = (early ? '\u2212' + (-d) : '+' + d);
+    if (early) dt.style.fill = '#1b6fa8';
   }
   const drv = driverOf(tr.no);
   if (drv) { const n = sv('text', { x: 0, y: up ? 40 : 50, class: 'dname' }, g); n.textContent = drv; }
@@ -703,9 +705,13 @@ function tick() {
   const groups = new Map();
   for (const a of act) { const k = a.col + a.tr.dir; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(a); }
   for (const list of groups.values()) {
-    list.sort((a, b) => a.y - b.y);
-    let idx = 0, last = -1e9;
-    for (const a of list) { idx = a.y - last < 46 ? idx + 1 : 0; last = a.y; a.off = idx * 44; }
+    list.sort((a, b) => a.y - b.y || a.tr.id - b.tr.id);
+    let act2 = []; // 近い列車どうしは別スロット(横に並ぶ)。空いた最小スロットを使う
+    for (const a of list) {
+      act2 = act2.filter((o) => a.y - o.y < 46);
+      let slot = 0; while (act2.some((o) => o.slot === slot)) slot++;
+      a.slot = slot; a.off = slot * 46; act2.push(a);
+    }
   }
   for (const a of act) {
     const { tr, d } = a;
@@ -749,10 +755,10 @@ function renderModal() {
     const t0 = i === 0 ? p.dep : p.arr;
     const tk = p.stop && p.track >= 0 ? (S.oud.stations[p.node].tracks[p.track] || `${p.track + 1}番線`) : '';
     const past = (t0 + shift) % DAY < now && (now - (t0 + shift) % DAY) < 43200;
-    const time = d > 0
-      ? `<div class="tm late"><b style="color:#e60012">${fmtHM(t0 + shift)}</b><s>${fmtHM(t0)}</s></div>`
+    const time = d !== 0
+      ? `<div class="tm late"><b style="color:${d > 0 ? '#e60012' : '#1b6fa8'}">${fmtHM(t0 + shift)}</b><s>${fmtHM(t0)}</s></div>`
       : `<div class="tm">${fmtHM(t0)}</div>`;
-    return `<div class="m-row ${past ? 'past' : ''}"><span class="nm">${esc(stName(p.node))}</span>${tk ? `<span class="tk ${d > 0 ? 'late' : ''}">${esc(tk)}</span>` : ''}${time}</div>`;
+    return `<div class="m-row ${past ? 'past' : ''}"><span class="nm">${esc(stName(p.node))}</span>${tk ? `<span class="tk ${d !== 0 ? 'late' : ''}">${esc(tk)}</span>` : ''}${time}</div>`;
   }).join('');
   const drv = driverOf(tr.no);
   $('#mBody').innerHTML = `
@@ -762,11 +768,11 @@ function renderModal() {
       <div class="dest">${esc(lastN.name)} <small>行</small></div>
       <div class="m-no">${esc(tr.no)}</div>
     </div>
-    <div class="m-sub">${esc(T.name)} / 運転士: <b>${esc(drv || '未割当')}</b>${d > 0 ? ` / <span style="color:#e60012">+${d}分</span>` : ''}</div>
+    <div class="m-sub">${esc(T.name)} / 運転士: <b>${esc(drv || '未割当')}</b>${d !== 0 ? ` / <span style="color:${d > 0 ? '#e60012' : '#1b6fa8'}">${d > 0 ? '+' + d : '\u2212' + (-d)}分${d < 0 ? '（早発）' : ''}</span>` : ''}</div>
     ${tr.note ? `<div class="m-sub">${esc(tr.note)}</div>` : ''}
     ${tr.isFinal && tr.nextNo ? `<div class="m-sub">終点到着後、折り返し <b>${esc(tr.nextNo)}</b> は遅延0で出発します</div>` : ''}
     <div class="m-ctl">
-      <span>遅延</span><button data-d="-1">−1</button><button data-d="1">+1</button><button data-d="5">+5</button><button data-d="0">解除</button>
+      <span>遅延</span><button data-d="-1">−1</button><button data-d="1">+1</button><input id="mDly" type="number" inputmode="numeric" step="1" min="-99" max="999" value="${d}" placeholder="分" aria-label="遅延(分)。マイナスは早い"><span class="u">分</span><button data-d="0">0</button>
       <select id="mDrv">${driverOptions(drv)}</select>
     </div>
     <div class="m-cap">到着時刻（定刻・見込み）／始発駅は発車時刻</div>
@@ -775,6 +781,10 @@ function renderModal() {
     const v = Number(b.dataset.d);
     setDelay(tr.no, v === 0 ? 0 : delayOf(tr.no) + v).catch((e) => toast('更新失敗: ' + e.code));
   });
+  const di = $('#mDly');
+  const applyDly = () => { const v = Number(di.value); if (di.value === '' || !Number.isFinite(v)) { di.value = delayOf(tr.no); return; } setDelay(tr.no, v).catch((e) => toast('更新失敗: ' + e.code)); };
+  di.onchange = applyDly;
+  di.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); di.blur(); } };
   $('#mDrv').onchange = (e) => setDriver(tr.no, e.target.value).catch((er) => toast('更新失敗: ' + er.code));
 }
 $('#mClose').onclick = () => { $('#modal').hidden = true; S.selected = null; };
@@ -972,7 +982,7 @@ function autoReset(tr, now, shift) {
   if (!ok || clearing.has(tr.no)) return;
   clearing.add(tr.no);
   setDelay(tr.no, 0)
-    .then(() => { if (tr.nextNo && delayOf(tr.nextNo) > 0) return setDelay(tr.nextNo, 0); })
+    .then(() => { if (tr.nextNo && delayOf(tr.nextNo) !== 0) return setDelay(tr.nextNo, 0); })
     .catch(() => clearing.delete(tr.no));
 }
 
