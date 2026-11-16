@@ -743,6 +743,12 @@ function driverOptions(cur) {
   const names = [...new Set([...S.participants, ...(cur ? [cur] : [])])].sort();
   return `<option value="">（未割当）</option>` + names.map((n) => `<option ${n === cur ? 'selected' : ''}>${esc(n)}</option>`).join('');
 }
+const showTrack = () => { try { return localStorage.getItem('zaisen.showTrack') !== '0'; } catch { return true; } };
+{
+  const cb = document.getElementById('optTrack');
+  cb.checked = showTrack();
+  cb.onchange = () => { try { localStorage.setItem('zaisen.showTrack', cb.checked ? '1' : '0'); } catch {} if (S.selected != null) renderModal(); };
+}
 function renderModal() {
   const tr = S.trains[S.trains.findIndex((t) => t.id === S.selected)];
   if (!tr) { $('#modal').hidden = true; return; }
@@ -753,7 +759,7 @@ function renderModal() {
   const rows = tr.pts.filter((p) => L.nodes.get(p.node).label).map((p, i) => {
     const nd = L.nodes.get(p.node);
     const t0 = i === 0 ? p.dep : p.arr;
-    const tk = p.stop && p.track >= 0 ? (S.oud.stations[p.node].tracks[p.track] || `${p.track + 1}番線`) : '';
+    const tk = showTrack() && p.stop && p.track >= 0 ? (S.oud.stations[p.node].tracks[p.track] || `${p.track + 1}番線`) : '';
     const past = (t0 + shift) % DAY < now && (now - (t0 + shift) % DAY) < 43200;
     const time = d !== 0
       ? `<div class="tm late"><b style="color:${d > 0 ? '#e60012' : '#1b6fa8'}">${fmtHM(t0 + shift)}</b><s>${fmtHM(t0)}</s></div>`
