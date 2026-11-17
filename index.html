@@ -18,7 +18,7 @@ button{font:inherit;cursor:pointer}
 .chip{border:1px solid rgba(255,255,255,.5);background:transparent;color:#fff;border-radius:999px;padding:3px 10px;font-size:12px}
 
 #view{max-width:640px;margin:0 auto;padding-bottom:120px}
-#map{display:block;width:100%;height:auto}
+#map{display:block;width:100%;height:auto;touch-action:manipulation;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
 #empty{padding:40px 20px;text-align:center;color:var(--mute)}
 
 .rail{fill:none;stroke:var(--line);stroke-width:5;stroke-linecap:round}
@@ -101,6 +101,12 @@ td select{max-width:9em;padding:4px;border:1px solid #aab;border-radius:6px;font
 #toast.on{opacity:.95}
 
 .sthit{cursor:pointer}
+button,select,.train,.sthit,.tabs button{touch-action:manipulation;-webkit-tap-highlight-color:rgba(27,111,168,.18)}
+@media (pointer:coarse){
+  .x,.tabs button,.m-ctl button,.btn,.susrow .x{min-height:42px;padding-left:14px;padding-right:14px}
+  .panel input,.panel select,.m-ctl input,.m-ctl select,#opsFilter,.sheet input,.sheet select{font-size:16px!important;min-height:42px}
+  .fab{width:58px;height:58px}
+}
 .numa{font-size:8px;font-weight:700;fill:#1d2a66;text-anchor:middle}
 .numb{font-size:15px;font-weight:700;fill:#1d2a66;text-anchor:middle}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:70;display:grid;place-items:center}
