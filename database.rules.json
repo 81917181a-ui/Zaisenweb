@@ -64,6 +64,30 @@
           },
           "updatedAt": {
             ".write": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now"
+          },
+          "cuts": {
+            "$k": {
+              ".write": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now",
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 1000"
+            }
+          },
+          "suspends": {
+            "$k": {
+              ".write": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now",
+              ".validate": "newData.hasChildren(['from','to','atSec'])",
+              "from": {
+                ".validate": "newData.isNumber()"
+              },
+              "to": {
+                ".validate": "newData.isNumber()"
+              },
+              "atSec": {
+                ".validate": "newData.isNumber()"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
           }
         }
       },
