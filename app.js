@@ -664,7 +664,7 @@ function renderMap() {
       bt.textContent = T.abbr; bx += 25;
     }
     // タップ領域（駅名・ナンバリング）
-    const hit = sv('rect', { x: lx - 4, y: nd.y - 26, width: 150, height: 34, fill: 'transparent', class: 'sthit', 'data-node': nd.id }, svgEl);
+    const hit = sv('rect', { x: lx - 6, y: nd.y - 34, width: 170, height: 48, fill: 'transparent', class: 'sthit', 'data-node': nd.id }, svgEl);
   }
   gSus = sv('g', {}, svgEl);
   gTrains = sv('g', {}, svgEl);
@@ -677,6 +677,7 @@ function iconGroup(tr, d, mine) {
   const T = S.oud.types[tr.type] || { abbr: '?', color: '#777' };
   const up = tr.dir === 'U';
   const g = sv('g', { class: 'train', 'data-id': tr.id });
+  sv('circle', { cx: 0, cy: 0, r: 34, fill: 'transparent' }, g);   // 指で押しやすい大きめの当たり判定
   const c = T.color;
   sv('polygon', { points: up ? '-9,-27 9,-27 0,-36' : '-9,27 9,27 0,36', fill: up ? c : c }, g);
   sv('polygon', { points: '-15,19 -5,19 -10,25', fill: c }, g);
@@ -740,12 +741,27 @@ function tick() {
 }
 setInterval(tick, 1000);
 
-svgEl.addEventListener('click', (e) => {
-  const hit = e.target.closest('.sthit');
-  if (hit) return S.view ? undefined : openStEdit(Number(hit.dataset.node));
-  const g = e.target.closest('.train'); if (!g) return;
-  S.selected = Number(g.dataset.id); renderModal(); $('#modal').hidden = false;
+// タップ判定: 通常は click で処理。スマホで click が来ない場合に備え、pointerup(指を離した)から少し待って未処理なら代わりに処理する。
+// （pointerup で即処理すると、開いた画面の背景に click が当たってすぐ閉じてしまうため）
+let tapStart = null, lastTap = 0, lastEl = null, tapTimer = 0;
+function openTapped(el) {
+  if (!el) return;
+  if (el === lastEl && Date.now() - lastTap < 600) return;   // 二重実行を防ぐ
+  lastEl = el; lastTap = Date.now();
+  if (el.classList.contains('sthit')) return S.view ? undefined : openStEdit(Number(el.dataset.node));
+  S.selected = Number(el.dataset.id); renderModal(); $('#modal').hidden = false;
+}
+svgEl.addEventListener('pointerdown', (e) => { tapStart = { x: e.clientX, y: e.clientY }; });
+svgEl.addEventListener('pointerup', (e) => {
+  if (!tapStart) return;
+  const moved = Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y); tapStart = null;
+  if (moved >= 12) return;
+  const el = e.target.closest?.('.sthit, .train'); if (!el) return;
+  clearTimeout(tapTimer);
+  tapTimer = setTimeout(() => openTapped(el), 350);
 });
+svgEl.addEventListener('pointercancel', () => { tapStart = null; });
+svgEl.addEventListener('click', (e) => { clearTimeout(tapTimer); openTapped(e.target.closest?.('.sthit, .train')); });
 
 /* ================= 打ち切り・運転見合わせ ================= */
 const cutKey = (t) => `c_${diaIdx()}_${t.id}`;
