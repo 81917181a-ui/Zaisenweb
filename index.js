@@ -68,21 +68,28 @@ async function cachedUserRoom(uid) {
 }
 const registerUser = (userId, roomId) => db.ref(`zaisen/userRooms/${userId}`).set({ roomId, joinedAt: TS() });
 const roomUrl = (id) => `${BASE}/?room=${id}`;
+const viewUrl = (id) => `${BASE}/?room=${id}&mode=view`;
 
 const trainCache = new Map();
-// 表示中ダイヤ(diaIndex)の列車を取得（30秒キャッシュ）
-async function loadTrains(room) {
-  const idx = Number(room.v.diaIndex) || 0, key = `${room.id}:${idx}`;
+// 表示中ダイヤ(diaIndex)の列車と駅を取得（30秒キャッシュ）
+async function loadDia(room) {
+  const idx0 = Number(room.v.diaIndex) || 0, key = `${room.id}:${idx0}`;
   const c = trainCache.get(key);
-  if (c && Date.now() - c.t < 30000) return c.list;
+  if (c && Date.now() - c.t < 30000) return c;
   const s = await db.ref(`zaisen/oud/${room.id}/json`).get();
-  let list = [];
+  let list = [], stations = [], idx = 0;
   if (s.exists()) {
-    try { const j = JSON.parse(s.val()); list = j.dias ? j.dias[Math.min(idx, j.dias.length - 1)]?.trains || [] : j.trains || []; } catch {}
+    try {
+      const j = JSON.parse(s.val());
+      stations = j.stations || [];
+      if (j.dias) { idx = Math.max(0, Math.min(idx0, j.dias.length - 1)); list = j.dias[idx]?.trains || []; } else list = j.trains || [];
+    } catch {}
   }
-  trainCache.set(key, { t: Date.now(), list });
-  return list;
+  const out = { t: Date.now(), list, stations, idx };
+  trainCache.set(key, out);
+  return out;
 }
+const loadTrains = async (room) => (await loadDia(room)).list;
 const trainNos = async (room) => [...new Set((await loadTrains(room)).map((t) => t.no))];
 // 自分(Discord ID)の呼び名 → 割り当てられた運番
 async function myTrainNos(room, uid) {
@@ -105,6 +112,22 @@ function pickTrain(nos, trains) {
   }
   return (running || recent || next || last).no;
 }
+// 運番の「いま走っている区間（なければ次に出る区間・最後の区間）」
+function pickSeg(trains, no) {
+  const now = jstNow();
+  const ts = trains.filter((t) => t.no === no).sort((a, b) => a.stops[0][2] - b.stops[0][2]);
+  if (!ts.length) return null;
+  return ts.find((t) => now >= t.stops[0][2] - 300 && now <= t.stops[t.stops.length - 1][2]) || ts.find((t) => t.stops[0][2] > now) || ts[ts.length - 1];
+}
+// 打ち切りにできる駅（途中の停車駅）
+function cutCandidates(seg, stations) {
+  const seen = new Set(), out = [];
+  for (const s of seg.stops.slice(1, -1)) {
+    if (s[1] !== 1 || seen.has(s[0])) continue;
+    seen.add(s[0]); out.push({ i: s[0], name: stations[s[0]]?.name || `駅${s[0]}` });
+  }
+  return out;
+}
 const jstNow = () => ((Date.now() / 1000 + 9 * 3600) % 86400);
 
 /* ---------- コマンド定義 ---------- */
@@ -115,6 +138,9 @@ const commands = [
   new SlashCommandBuilder().setName('link').setDescription('作った部屋のコード'),
   new SlashCommandBuilder().setName('delay').setDescription('電車を遅らせる')
     .addIntegerOption((o) => o.setName('minutes').setDescription('遅れる分数（マイナスは早い、0で解除）').setRequired(true).setMinValue(-99).setMaxValue(999))
+    .addStringOption((o) => o.setName('train').setDescription('運番（省略すると自分の担当）').setAutocomplete(true)),
+  new SlashCommandBuilder().setName('cancel').setDescription('打ち切り（駅を選ぶ。省略すると取り消し）')
+    .addStringOption((o) => o.setName('station').setDescription('打ち切る駅（その列車の途中の停車駅）').setAutocomplete(true))
     .addStringOption((o) => o.setName('train').setDescription('運番（省略すると自分の担当）').setAutocomplete(true)),
   new SlashCommandBuilder().setName('delayclear').setDescription('遅延コマンドの削除')
     .addStringOption((o) => o.setName('train').setDescription('運番（省略すると自分の担当。担当がなければ全列車）').setAutocomplete(true)),
@@ -146,7 +172,17 @@ client.on('interactionCreate', async (i) => {
     if (!i.guildId) return;
     if (i.isAutocomplete()) {
       const room = await cachedUserRoom(i.user.id);
-      const q = String(i.options.getFocused()).toLowerCase();
+      const f = i.options.getFocused(true);
+      const q = String(f.value).toLowerCase();
+      if (f.name === 'station') {
+        if (!room) return i.respond([]);
+        const dia = await loadDia(room);
+        let no = (i.options.getString('train') || '').trim();
+        if (!no) { const nos = await myTrainNos(room, i.user.id); if (nos.length) no = pickTrain(nos, dia.list); }
+        const seg = no ? pickSeg(dia.list, no) : null;
+        const c = seg ? cutCandidates(seg, dia.stations).filter((x) => x.name.toLowerCase().includes(q)).slice(0, 25) : [];
+        return i.respond(c.map((x) => ({ name: x.name, value: String(x.i) })));
+      }
       const list = room ? (await trainNos(room)).filter((n) => n.toLowerCase().includes(q)).slice(0, 25) : [];
       return i.respond(list.map((n) => ({ name: n, value: n })));
     }
@@ -165,7 +201,7 @@ client.on('interactionCreate', async (i) => {
         updatedAt: TS(),
       });
       await registerUser(i.user.id, id);
-      return i.editReply('部屋を作成しました。\n3日後にリンクが消えます。\n/linkのコマンドでリンクを発行して他の人が/joinで入れるようになります。\nリンク開いて設定からファイル読み込めます。');
+      return i.editReply(`部屋を作成しました。\n3日後にリンクが消えます。\n/linkのコマンドでリンクを発行して他の人が/joinで入れるようになります。\nリンク開いて設定からファイル読み込めます。\n\n操作用: ${roomUrl(id)}\n乗客モード（見るだけ）: ${viewUrl(id)}`);
     }
 
     if (i.commandName === 'join') {
@@ -181,7 +217,7 @@ client.on('interactionCreate', async (i) => {
     if (!room) return i.editReply('登録されている有効なルームがありません。/room で発行するか、/join でルームのURLを登録してください。');
 
     if (i.commandName === 'link') {
-      return i.editReply(`${roomUrl(room.id)}\n有効期限: ${jst.format(room.v.expiresAt)} JST`);
+      return i.editReply(`操作用: ${roomUrl(room.id)}\n乗客モード（見るだけ）: ${viewUrl(room.id)}\n有効期限: ${jst.format(room.v.expiresAt)} JST`);
     }
 
     if (i.commandName === 'delay') {
@@ -201,6 +237,30 @@ client.on('interactionCreate', async (i) => {
       const state = now < start ? '（まだ出発前です。出発がその分遅れます）' : now > end ? '（すでに終着済みのため、まもなく自動で0に戻ります）' : '';
       await room.ref.update({ [`delays/${safeKey(train)}`]: min, updatedAt: TS() });
       return i.editReply(min === 0 ? `${train} の遅延を解除しました。` : `${train} を **${min > 0 ? "+" + min : "\u2212" + (-min)}分**${min < 0 ? "（早発）" : " 遅延"}に設定しました。${state}\n終点到着後は自動で遅延0に戻り、折り返し列車も遅延0で出発します。`);
+    }
+
+    if (i.commandName === 'cancel') {
+      const given = (i.options.getString('train') || '').trim();
+      const dia = await loadDia(room);
+      let train = given;
+      if (!train) {
+        const nos = await myTrainNos(room, i.user.id);
+        if (!nos.length) return i.editReply('担当の運番がありません。運番を指定する（/cancel train:運番）か、Webの設定「参加者ID」に自分のDiscord IDを登録して運番を割り当ててください。');
+        train = pickTrain(nos, dia.list);
+      }
+      const seg = pickSeg(dia.list, train);
+      if (!seg) return i.editReply(`運番「${train}」はダイヤにありません。（候補は入力補完に出ます）`);
+      const key = `cuts/c_${dia.idx}_${seg.id}`;
+      const val = (i.options.getString('station') || '').trim();
+      if (!val) {
+        await room.ref.update({ [key]: null, updatedAt: TS() });
+        return i.editReply(`${train} の打ち切りを取り消しました。`);
+      }
+      const hit = cutCandidates(seg, dia.stations).find((c) => String(c.i) === val || c.name === val);
+      if (!hit) return i.editReply('その駅は、この列車の途中の停車駅にありません。入力補完から選んでください。');
+      const lastName = dia.stations[seg.stops[seg.stops.length - 1][0]]?.name || '終点';
+      await room.ref.update({ [key]: hit.i, updatedAt: TS() });
+      return i.editReply(`${train} を **${hit.name}** で打ち切りにしました。${hit.name}〜${lastName} は運休です。\n${lastName}から折り返す列車は ${lastName}〜${hit.name} が運休になり、${hit.name} から時刻表どおり運転します。`);
     }
 
     if (i.commandName === 'delayclear') {
