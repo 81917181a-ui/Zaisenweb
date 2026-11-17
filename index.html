@@ -22,6 +22,15 @@ button{font:inherit;cursor:pointer}
 #empty{padding:40px 20px;text-align:center;color:var(--mute)}
 
 .rail{fill:none;stroke:var(--line);stroke-width:5;stroke-linecap:round}
+.rail.susp{stroke:#e60012;stroke-width:8}
+.susl{fill:#e60012;font-size:14px;font-weight:700;text-anchor:middle;paint-order:stroke;stroke:#fff;stroke-width:4px;pointer-events:none}
+.m-row.cancel{opacity:.55}.m-row.cancel .tm{color:#888;font-weight:700}
+.m-ctl .early{color:#1b6fa8}
+body.view #fabs,body.view #diaSel{display:none!important}
+body.view #ttl::after{content:' (乗客用)';font-size:12px;font-weight:400;opacity:.8}
+.linkrow{display:flex;gap:6px;align-items:center}.linkrow input{flex:1;min-width:0;font-size:12px!important}
+.susrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #eef}
+.susrow span{font-size:14px;color:#222}
 .dot{fill:var(--line);stroke:#fff;stroke-width:2}
 .sname{font-size:17px;font-weight:700;fill:#111}
 .bdg-t{font-size:13px;fill:#fff;font-weight:700;text-anchor:middle}
@@ -145,6 +154,8 @@ td select{max-width:9em;padding:4px;border:1px solid #aab;border-radius:6px;font
     <button data-tab="tDiscord" class="on" type="button">Discord</button>
     <button data-tab="tId" type="button">参加者ID</button>
     <button data-tab="tOud" type="button">ダイヤ読み込み(.oud2から）</button>
+    <button data-tab="tSus" type="button">運転見合わせ</button>
+    <button data-tab="tView" type="button">表示</button>
     <button data-tab="tTT" type="button">時刻表</button>
     <button data-tab="tTest" type="button">テスト</button>
   </nav>
@@ -155,6 +166,11 @@ td select{max-width:9em;padding:4px;border:1px solid #aab;border-radius:6px;font
     <input id="inGuild" inputmode="numeric" placeholder="例: 123456789012345678" autocomplete="off">
     <button class="btn" id="saveGuild" type="button">保存</button>
     <p class="note">登録されてるディスコードIDのサーバーで/delayなど使ったら反映されます。</p>
+    <label>操作用リンク（遅れ・打ち切り・設定ができる）</label>
+    <div class="linkrow"><input id="lnkEdit" readonly><button class="x" data-copy="lnkEdit" type="button">コピー</button></div>
+    <label>乗客モードのリンク（見るだけ）</label>
+    <div class="linkrow"><input id="lnkView" readonly><button class="x" data-copy="lnkView" type="button">コピー</button></div>
+    <p class="note">乗客モードは、操作用で設定したダイヤ・遅れ・運休・運転見合わせがそのまま表示されます。画面から設定や遅れの変更はできません。</p>
   </div>
 
   <div id="tId" class="tab">
@@ -171,6 +187,22 @@ td select{max-width:9em;padding:4px;border:1px solid #aab;border-radius:6px;font
     <input id="inFile" type="file">
     <div id="fileInfo" class="note"></div>
     <div id="oudMeta" class="note"></div>
+  </div>
+
+  <div id="tSus" class="tab">
+    <label>運転見合わせ区間（駅〜駅）</label>
+    <select id="susFrom"></select>
+    <div class="note" style="text-align:center;margin:2px 0">〜</div>
+    <select id="susTo"></select>
+    <button class="btn" id="susAdd" type="button">運転見合わせを設定</button>
+    <label>現在の運転見合わせ</label>
+    <div id="susList" class="note">なし</div>
+    <p class="note">設定すると区間が赤くなり、その区間に入る列車は直前の駅で停まり、解除するまで遅れが増えます。</p>
+  </div>
+
+  <div id="tView" class="tab">
+    <label><input type="checkbox" id="optTrack" checked> 番線を表示する</label>
+    <p class="note">列車の詳細の各駅に出る番線の表示です。この端末だけの設定です。</p>
   </div>
 
   <div id="tTT" class="tab">
