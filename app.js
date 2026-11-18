@@ -618,6 +618,7 @@ function onRoomChange() {
   if (cs !== cutSig) { cutSig = cs; if (S.oud && S.layout) S.trains = buildTrains(); }
   const ss = JSON.stringify(S.room.suspends || {});
   if (ss !== susSig) { susSig = ss; paintSuspends(); renderSusList(); }
+  renderAlert();
   refreshOpsIfIdle();
   if (S.selected != null) renderModal();
 }
@@ -636,7 +637,7 @@ const svgEl = $('#map');
 
 function renderMap() {
   const oud = S.oud;
-  $('#ttl').textContent = oud.name;
+  document.title = oud.name + ' 在線表示';
   const L = (S.layout = buildLayout(oud));
   S.trains = buildTrains();
   renderDiaSel();
@@ -662,18 +663,18 @@ function renderMap() {
   }
   for (const nd of L.nodes.values()) {
     if (!nd.label) continue;
-    sv('circle', { cx: nd.x, cy: nd.y, r: 8.5, class: 'dot' }, svgEl);
+    sv('circle', { cx: nd.x, cy: nd.y, r: 9, class: 'dot' }, svgEl);
     const lx = nd.col === 0 ? 12 : 318;
     const num = stNum(nd.id);
     let tx0 = lx;
     if (num) {
-      tx0 = lx + 40;
-      sv('rect', { x: lx, y: nd.y - 24, width: 33, height: 33, rx: 9, class: 'numbox' }, svgEl);
+      tx0 = lx + 38;
+      sv('circle', { cx: lx + 16, cy: nd.y - 6, r: 16, class: 'numbox' }, svgEl);
       const m = /^([A-Za-z]+)\s*(\d+)$/.exec(num);
       if (m) {
-        const a = sv('text', { x: lx + 16.5, y: nd.y - 12, class: 'numa' }, svgEl); a.textContent = m[1].toUpperCase();
-        const b = sv('text', { x: lx + 16.5, y: nd.y + 2, class: 'numb' }, svgEl); b.textContent = m[2];
-      } else { const a = sv('text', { x: lx + 16.5, y: nd.y - 7, class: 'numa', 'dominant-baseline': 'central' }, svgEl); a.textContent = num.slice(0, 4); }
+        const a = sv('text', { x: lx + 16, y: nd.y - 12, class: 'numa' }, svgEl); a.textContent = m[1].toUpperCase();
+        const b = sv('text', { x: lx + 16, y: nd.y + 1, class: 'numb' }, svgEl); b.textContent = m[2];
+      } else { const a = sv('text', { x: lx + 16, y: nd.y - 6, class: 'numa', 'dominant-baseline': 'central' }, svgEl); a.textContent = num.slice(0, 4); }
     }
     const tx = sv('text', { x: tx0, y: nd.y + 2, class: 'sname' }, svgEl);
     tx.textContent = stName(nd.id);
@@ -682,16 +683,16 @@ function renderMap() {
     for (const ti of [...(mk || stopTypes.get(nd.id) || [])].sort((a, b) => a - b)) {
       const T = S.oud.types[ti]; if (!T || T.name === '回送') continue;
       const TT = typeOf(ti);
-      sv('rect', { x: bx, y: nd.y + 14, width: 23, height: 23, rx: 6, fill: TT.color }, svgEl);
-      const bt = sv('text', { x: bx + 11.5, y: nd.y + 30, class: 'bdg-t' }, svgEl);
-      bt.textContent = TT.abbr; bx += 27;
+      sv('rect', { x: bx, y: nd.y + 12, width: 22, height: 22, rx: 3, fill: TT.color }, svgEl);
+      const bt = sv('text', { x: bx + 11, y: nd.y + 28, class: 'bdg-t' }, svgEl);
+      bt.textContent = TT.abbr; bx += 25;
     }
     // タップ領域（駅名・ナンバリング）
     sv('rect', { x: lx - 6, y: nd.y - 34, width: 170, height: 52, fill: 'transparent', class: 'sthit', 'data-node': nd.id }, svgEl);
   }
   gSus = sv('g', {}, svgEl);
   gTrains = sv('g', {}, svgEl);
-  fillSusSelects(); paintSuspends(); renderSusList();
+  fillSusSelects(); paintSuspends(); renderSusList(); renderAlert();
   tick();
 }
 
@@ -705,7 +706,7 @@ function iconGroup(tr, d, mine) {
   sv('polygon', { points: up ? '-9,-27 9,-27 0,-36' : '-9,27 9,27 0,36', fill: up ? c : c }, g);
   sv('polygon', { points: '-15,19 -5,19 -10,25', fill: c }, g);
   sv('polygon', { points: '5,19 15,19 10,25', fill: c }, g);
-  sv('rect', { x: -19, y: -19, width: 38, height: 38, rx: 10, fill: c, stroke: mine ? '#0e1b2b' : '#fff', 'stroke-width': 3 }, g);
+  sv('rect', { x: -19, y: -19, width: 38, height: 38, rx: 10, fill: c, stroke: mine ? '#111' : '#fff', 'stroke-width': mine ? 3 : 2 }, g);
   const t = sv('text', { x: 0, y: 1, class: 'ibtxt' }, g); t.textContent = T.abbr;
   if (d !== 0) {
     const by = up ? -56 : -42, early = d < 0;
@@ -733,6 +734,8 @@ function tick() {
     const p = routePoint(S.layout, loc.u, loc.v, loc.f);
     act.push({ tr, d: st.d, x: p.x, y: p.y, col: p.x > 365 ? 1 : 0 });
   }
+  const lateN = act.filter((a) => a.d !== 0).length;
+  $('#hudsum').textContent = act.length ? `運転中 ${act.length}本${lateN ? ` ／ 遅れ ${lateN}本` : ''}` : '運転中の列車なし';
   // 重なり回避
   const groups = new Map();
   for (const a of act) { const k = a.col + a.tr.dir; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(a); }
@@ -867,6 +870,15 @@ function trainState(tr, now) {
     if (l) { loc = l; if (h) { held = h; d = d0 + Math.ceil(Math.max(0, tt - h.depT) / 60); } break; }
   }
   return { d0, d, loc, held };
+}
+// 画面上部の案内（運転見合わせ・打ち切り）。乗客モードでも見える
+function renderAlert() {
+  const box = $('#alert'); if (!box) return;
+  const items = [];
+  if (S.layout) for (const s of susList()) items.push(`<b>運転見合わせ</b> ${esc(stName(s.from))} 〜 ${esc(stName(s.to))}`);
+  for (const t of S.trains || []) if (t.cutNode != null) items.push(`<b>${esc(t.no)}</b> ${esc(stName(t.cutNode))} で打ち切り`);
+  box.hidden = !items.length;
+  box.innerHTML = items.map((i) => `<div>${i}</div>`).join('');
 }
 function paintSuspends() {
   if (!S.layout || !gSus) return;
