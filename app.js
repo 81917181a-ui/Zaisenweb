@@ -598,11 +598,10 @@ const typeOf = (ti) => {
   return e ? { ...T, abbr: e.abbr || T.abbr, color: e.color || T.color } : T;
 };
 const typesMerged = () => S.oud.types.map((_, i) => typeOf(i));
-// 保存に失敗したときの案内（ルール未公開の permission denied を分かりやすく）
+// 保存に失敗したときの表示（詳細はコンソールに出す）
 function failMsg(what, e) {
-  const c = String(e?.code || e?.message || '');
-  if (/permission/i.test(c)) return `${what}: 権限エラー。Firebaseのルール(database.rules.json)を最新にして「公開」してください`;
-  return `${what}: ${c}`;
+  console.error(what, e?.code || '', e?.message || e);
+  return 'エラーが発生しました';
 }
 let editSig = '', cutSig = '', susSig = '';
 const diaIdx = () => Math.min(Math.max(0, Number(S.room?.diaIndex) || 0), (S.oud?.dias.length || 1) - 1);
