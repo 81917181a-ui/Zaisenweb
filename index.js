@@ -335,12 +335,16 @@ setInterval(() => {
   fetch(SELF_URL + '/health', { headers: { 'x-self-ping': '1' } }).then((r) => console.log('self-ping', r.status)).catch((e) => console.error('self-ping failed', e.message));
 }, 10 * 60 * 1000);
 
+// NO_DISCORD=1 を設定すると Discord に接続せず、Web画面の配信だけを行う（Discord 側を別ホスティングで動かすとき用）
+const DISCORD_ON = !process.env.NO_DISCORD;
+if (!DISCORD_ON) console.log('NO_DISCORD: Discord には接続せず、Web画面のみ配信します');
 console.log('Discord にログイン中...', process.env.DISCORD_TOKEN ? '(トークンあり)' : '(トークンが未設定！ DISCORD_TOKEN を確認)');
 // 診断: ログインが進まない原因(Discord 側のブロック・レート制限・トークン不正)をログに出す
-client.on('debug', (m) => { if (!/Heartbeat|heartbeat/.test(m)) console.log('[discord debug]', String(m).slice(0, 200)); });
-client.rest.on('rateLimited', (i) => console.error('[discord rateLimited]', i.route, 'retry', i.timeToReset, 'ms', i.global ? '(global)' : ''));
+if (DISCORD_ON) client.on('debug', (m) => { if (!/Heartbeat|heartbeat/.test(m)) console.log('[discord debug]', String(m).slice(0, 200)); });
+if (DISCORD_ON) client.rest.on('rateLimited', (i) => console.error('[discord rateLimited]', i.route, 'retry', i.timeToReset, 'ms', i.global ? '(global)' : ''));
 client.on('invalidated', () => { console.error('セッション無効化 → 終了して再起動'); process.exit(1); });
 (async () => {
+  if (!DISCORD_ON) return;
   try {
     const r = await fetch('https://discord.com/api/v10/users/@me', { headers: { Authorization: 'Bot ' + (process.env.DISCORD_TOKEN || '') } });
     const body = (await r.text()).slice(0, 160).replace(/\s+/g, ' ');
@@ -349,8 +353,8 @@ client.on('invalidated', () => { console.error('セッション無効化 → 終
     if (r.status === 429 || /cloudflare|1015|banned/i.test(body)) console.error('[診断] Render の IP が Discord(Cloudflare) に制限されています。サービスの再起動/Region 変更、または別ホスティングが必要');
   } catch (e) { console.error('[診断] Discord API に到達できません:', e.message); }
 })();
-setTimeout(() => { if (!client.isReady()) console.error('[診断] 60秒たってもログイン未完了。上の [discord debug] / [診断] を確認'); }, 60000);
-client.login(process.env.DISCORD_TOKEN).then(() => console.log('Discord login OK')).catch((e) => {
+setTimeout(() => { if (DISCORD_ON && !client.isReady()) console.error('[診断] 60秒たってもログイン未完了。上の [discord debug] / [診断] を確認'); }, 60000);
+(DISCORD_ON ? client.login(process.env.DISCORD_TOKEN) : Promise.resolve()).then(() => console.log('Discord login OK')).catch((e) => {
   console.error('Discord login FAILED:', e.message, '→ DISCORD_TOKEN を確認');
   setTimeout(() => process.exit(1), 5000); // 落として再起動に任せる
 });
@@ -364,7 +368,7 @@ process.on('uncaughtException', (e) => {
 // 見張り: Discord に5分以上つながらない状態が続いたら終了して再起動させる
 let notReadySince = 0;
 setInterval(() => {
-  if (client.isReady()) { notReadySince = 0; return; }
+  if (!DISCORD_ON || client.isReady()) { notReadySince = 0; return; }
   if (!notReadySince) notReadySince = Date.now();
   if (Date.now() - notReadySince > 5 * 60 * 1000) {
     console.error('Discord に5分以上つながらないため終了します(自動再起動を期待)');
