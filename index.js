@@ -201,7 +201,13 @@ client.on('interactionCreate', async (i) => {
         updatedAt: TS(),
       });
       await registerUser(i.user.id, id);
-      return i.editReply(`部屋を作成しました。\n3日後にリンクが消えます。\n/linkのコマンドでリンクを発行して他の人が/joinで入れるようになります。\nリンク開いて設定からファイル読み込めます。\n\n操作用: ${roomUrl(id)}\n乗客モード（見るだけ）: ${viewUrl(id)}`);
+      const msg = `部屋を作成しました。\n3日後にリンクが消えます。\n/linkのコマンドでリンクを発行して他の人が/joinで入れるようになります。\nリンク開いて設定からファイル読み込めます。\n\n操作用: ${roomUrl(id)}\n乗客モード（見るだけ）: ${viewUrl(id)}`;
+      // リンクはDMで送る。DMが閉じていて送れないときだけ、本人にだけ見える返信で渡す
+      let dmOk = true;
+      try { await i.user.send(msg); } catch { dmOk = false; }
+      if (dmOk) return i.editReply('部屋を作成しました。リンクをDMで送りました。');
+      return i.editReply({ content: 'DMを送れませんでした（DMの受け取りが閉じています）。リンクはこの下の本人だけに見える返信に出します。' })
+        .then(() => i.followUp({ content: msg, flags: ephemeral }));
     }
 
     if (i.commandName === 'join') {
