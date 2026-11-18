@@ -52,6 +52,9 @@
               },
               "name": {
                 ".validate": "newData.isString() && newData.val().length <= 24"
+              },
+              "marks": {
+                ".validate": "newData.isString() && newData.val().length <= 80"
               }
             }
           },
@@ -86,6 +89,17 @@
               },
               "$other": {
                 ".validate": false
+              }
+            }
+          },
+          "typeEdits": {
+            "$k": {
+              ".write": "root.child('zaisen/rooms/' + $roomId + '/expiresAt').val() > now",
+              "abbr": {
+                ".validate": "newData.isString() && newData.val().length <= 2"
+              },
+              "color": {
+                ".validate": "newData.isString() && newData.val().matches(/^#[0-9a-fA-F]{6}$/)"
               }
             }
           }
