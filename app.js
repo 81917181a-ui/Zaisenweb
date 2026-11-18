@@ -589,6 +589,21 @@ const driverOf = (no) => S.room?.assignments?.[safeKey(no)] || '';
 const stEdit = (id) => S.room?.stationEdits?.['s_' + id] || {};
 const stName = (id) => stEdit(id).name || S.layout?.nodes.get(id)?.name || '';
 const stNum = (id) => stEdit(id).num || '';
+// 駅ごとの停車マーク上書き（"," + 種別番号 + "," の文字列。無ければダイヤどおり）
+const marksOf = (id) => { const m = stEdit(id).marks; return typeof m === 'string' && m ? new Set(m.split(',').filter(Boolean).map(Number)) : null; };
+// 種別マーク（文字・色）の編集を反映した種別
+const typeOf = (ti) => {
+  const T = S.oud?.types[ti] || { abbr: '?', color: '#777', name: '' };
+  const e = S.room?.typeEdits?.['t' + ti];
+  return e ? { ...T, abbr: e.abbr || T.abbr, color: e.color || T.color } : T;
+};
+const typesMerged = () => S.oud.types.map((_, i) => typeOf(i));
+// 保存に失敗したときの案内（ルール未公開の permission denied を分かりやすく）
+function failMsg(what, e) {
+  const c = String(e?.code || e?.message || '');
+  if (/permission/i.test(c)) return `${what}: 権限エラー。Firebaseのルール(database.rules.json)を最新にして「公開」してください`;
+  return `${what}: ${c}`;
+}
 let editSig = '', cutSig = '', susSig = '';
 const diaIdx = () => Math.min(Math.max(0, Number(S.room?.diaIndex) || 0), (S.oud?.dias.length || 1) - 1);
 const curTrains = () => S.oud.dias[diaIdx()].trains;
@@ -597,7 +612,7 @@ function onRoomChange() {
   $('#inGuild').value ||= S.room.guildId || '';
   const m = S.room.oudMeta;
   $('#oudMeta').textContent = m ? `現在のダイヤ: ${m.fileName}（${m.dias ? m.dias + 'ダイヤ / ' : ''}${m.trains}本 / ${m.stations}駅）` : '';
-  const sig = JSON.stringify(S.room.stationEdits || {}) + '|' + diaIdx();
+  const sig = JSON.stringify(S.room.stationEdits || {}) + '|' + JSON.stringify(S.room.typeEdits || {}) + '|' + diaIdx();
   if (sig !== editSig) { editSig = sig; if (S.oud) renderMap(); }
   const cs = JSON.stringify(S.room.cuts || {});
   if (cs !== cutSig) { cutSig = cs; if (S.oud && S.layout) S.trains = buildTrains(); }
@@ -637,34 +652,42 @@ function renderMap() {
     if (!stopTypes.has(n)) stopTypes.set(n, new Set());
     stopTypes.get(n).add(t.type);
   }
+  S.stopTypes = stopTypes;
   railEls = new Map();
-  for (const e of L.edges) railEls.set(e, sv('path', { d: e.d, class: 'rail' }, svgEl));
+  for (const e of L.edges) {
+    const g = sv('g', { class: 'rail' }, svgEl);
+    sv('path', { d: e.d, class: 'ro' }, g);
+    sv('path', { d: e.d, class: 'ri' }, g);
+    railEls.set(e, g);
+  }
   for (const nd of L.nodes.values()) {
     if (!nd.label) continue;
-    sv('circle', { cx: nd.x, cy: nd.y, r: 9, class: 'dot' }, svgEl);
+    sv('circle', { cx: nd.x, cy: nd.y, r: 8.5, class: 'dot' }, svgEl);
     const lx = nd.col === 0 ? 12 : 318;
     const num = stNum(nd.id);
     let tx0 = lx;
     if (num) {
-      tx0 = lx + 38;
-      sv('circle', { cx: lx + 16, cy: nd.y - 6, r: 16, fill: '#fff', stroke: '#19aee8', 'stroke-width': 3 }, svgEl);
+      tx0 = lx + 40;
+      sv('rect', { x: lx, y: nd.y - 24, width: 33, height: 33, rx: 9, class: 'numbox' }, svgEl);
       const m = /^([A-Za-z]+)\s*(\d+)$/.exec(num);
       if (m) {
-        const a = sv('text', { x: lx + 16, y: nd.y - 12, class: 'numa' }, svgEl); a.textContent = m[1].toUpperCase();
-        const b = sv('text', { x: lx + 16, y: nd.y + 1, class: 'numb' }, svgEl); b.textContent = m[2];
-      } else { const a = sv('text', { x: lx + 16, y: nd.y - 6, class: 'numa', 'dominant-baseline': 'central' }, svgEl); a.textContent = num.slice(0, 4); }
+        const a = sv('text', { x: lx + 16.5, y: nd.y - 12, class: 'numa' }, svgEl); a.textContent = m[1].toUpperCase();
+        const b = sv('text', { x: lx + 16.5, y: nd.y + 2, class: 'numb' }, svgEl); b.textContent = m[2];
+      } else { const a = sv('text', { x: lx + 16.5, y: nd.y - 7, class: 'numa', 'dominant-baseline': 'central' }, svgEl); a.textContent = num.slice(0, 4); }
     }
     const tx = sv('text', { x: tx0, y: nd.y + 2, class: 'sname' }, svgEl);
     tx.textContent = stName(nd.id);
     let bx = lx;
-    for (const ti of [...(stopTypes.get(nd.id) || [])].sort((a, b) => a - b)) {
-      const T = oud.types[ti]; if (!T || T.name === '回送') continue;
-      sv('rect', { x: bx, y: nd.y + 12, width: 22, height: 22, rx: 3, fill: T.color }, svgEl);
-      const bt = sv('text', { x: bx + 11, y: nd.y + 28, class: 'bdg-t' }, svgEl);
-      bt.textContent = T.abbr; bx += 25;
+    const mk = marksOf(nd.id);
+    for (const ti of [...(mk || stopTypes.get(nd.id) || [])].sort((a, b) => a - b)) {
+      const T = S.oud.types[ti]; if (!T || T.name === '回送') continue;
+      const TT = typeOf(ti);
+      sv('rect', { x: bx, y: nd.y + 14, width: 23, height: 23, rx: 6, fill: TT.color }, svgEl);
+      const bt = sv('text', { x: bx + 11.5, y: nd.y + 30, class: 'bdg-t' }, svgEl);
+      bt.textContent = TT.abbr; bx += 27;
     }
     // タップ領域（駅名・ナンバリング）
-    const hit = sv('rect', { x: lx - 6, y: nd.y - 34, width: 170, height: 48, fill: 'transparent', class: 'sthit', 'data-node': nd.id }, svgEl);
+    sv('rect', { x: lx - 6, y: nd.y - 34, width: 170, height: 52, fill: 'transparent', class: 'sthit', 'data-node': nd.id }, svgEl);
   }
   gSus = sv('g', {}, svgEl);
   gTrains = sv('g', {}, svgEl);
@@ -674,7 +697,7 @@ function renderMap() {
 
 /* ---- 列車アイコン（種別バッジ型） ---- */
 function iconGroup(tr, d, mine) {
-  const T = S.oud.types[tr.type] || { abbr: '?', color: '#777' };
+  const T = typeOf(tr.type);
   const up = tr.dir === 'U';
   const g = sv('g', { class: 'train', 'data-id': tr.id });
   sv('circle', { cx: 0, cy: 0, r: 34, fill: 'transparent' }, g);   // 指で押しやすい大きめの当たり判定
@@ -682,15 +705,14 @@ function iconGroup(tr, d, mine) {
   sv('polygon', { points: up ? '-9,-27 9,-27 0,-36' : '-9,27 9,27 0,36', fill: up ? c : c }, g);
   sv('polygon', { points: '-15,19 -5,19 -10,25', fill: c }, g);
   sv('polygon', { points: '5,19 15,19 10,25', fill: c }, g);
-  sv('rect', { x: -19, y: -19, width: 38, height: 38, rx: 9, fill: c, stroke: mine ? '#111' : 'none', 'stroke-width': 3 }, g);
+  sv('rect', { x: -19, y: -19, width: 38, height: 38, rx: 10, fill: c, stroke: mine ? '#0e1b2b' : '#fff', 'stroke-width': 3 }, g);
   const t = sv('text', { x: 0, y: 1, class: 'ibtxt' }, g); t.textContent = T.abbr;
   if (d !== 0) {
     const by = up ? -56 : -42, early = d < 0;
-    const bg = early ? '#e3f0fb' : '#fde4e4', bd = early ? '#9cc4e8' : '#f2a6a6';
+    const bg = early ? '#1f6fb2' : '#d3001b';
     sv('path', { d: `M-5 ${by + 11}L0 ${by + 17}L5 ${by + 11}Z`, fill: bg }, g);
-    sv('rect', { x: -22, y: by - 11, width: 44, height: 22, rx: 11, fill: bg, stroke: bd, 'stroke-width': 1.5 }, g);
-    const dt = sv('text', { x: 0, y: by, class: 'dly' }, g); dt.textContent = (early ? '\u2212' + (-d) : '+' + d);
-    if (early) dt.style.fill = '#1b6fa8';
+    sv('rect', { x: -23, y: by - 12, width: 46, height: 24, rx: 12, fill: bg, stroke: '#fff', 'stroke-width': 2 }, g);
+    const dt = sv('text', { x: 0, y: by + 1, class: 'dly' }, g); dt.textContent = (early ? '\u2212' + (-d) : '+' + d);
   }
   const drv = driverOf(tr.no);
   if (drv) { const n = sv('text', { x: 0, y: up ? 40 : 50, class: 'dname' }, g); n.textContent = drv; }
@@ -699,7 +721,7 @@ function iconGroup(tr, d, mine) {
 
 function tick() {
   const now = nowSec();
-  $('#clock').textContent = fmtHMS(now) + (sim ? ' (テスト)' : ' JST');
+  $('#clock').innerHTML = fmtHMS(now) + `<small>${sim ? 'テスト' : 'JST'}</small>`;
   if (!S.layout || !gTrains) return;
   const act = [];
   for (const tr of S.trains) {
@@ -878,7 +900,7 @@ $('#susAdd').onclick = async () => {
   try {
     await update(roomRef, { ['suspends/' + key]: { from, to, atSec: Math.floor(nowSec()) }, updatedAt: stamp() });
     toast('運転見合わせを設定しました');
-  } catch (e) { toast('設定失敗: ' + e.code); }
+  } catch (e) { toast(failMsg('設定失敗', e)); }
 };
 $('#susList').onclick = (e) => {
   const b = e.target.closest('[data-rel]'); if (!b) return;
@@ -892,7 +914,7 @@ async function releaseSus(ids) {
     const st = trainState(tr, now);
     if (st.held && ids.includes(st.held.s.id) && st.d !== st.d0) up['delays/' + safeKey(tr.no)] = Math.min(999, st.d);
   }
-  try { await update(roomRef, up); toast('運転見合わせを解除しました'); } catch (e) { toast('解除失敗: ' + e.code); }
+  try { await update(roomRef, up); toast('運転見合わせを解除しました'); } catch (e) { toast(failMsg('解除失敗', e)); }
 }
 
 /* ================= リンク（操作用 / 乗客モード） ================= */
@@ -922,7 +944,7 @@ const showTrack = () => { try { return localStorage.getItem('zaisen.showTrack') 
 function renderModal() {
   const tr = S.trains[S.trains.findIndex((t) => t.id === S.selected)];
   if (!tr) { $('#modal').hidden = true; return; }
-  const L = S.layout, T = S.oud.types[tr.type] || { abbr: '?', color: '#777' };
+  const L = S.layout, T = typeOf(tr.type);
   const now = nowSec();
   const st = trainState(tr, now), d0 = st.d0;
   const fp = tr.fullPts, hk = st.held ? st.held.k : Infinity;
@@ -949,39 +971,43 @@ function renderModal() {
   const dnow = st.d;
   const cutOpts = fp.slice(1, -1).filter((p) => p.stop && L.nodes.get(p.node).label)
     .map((p) => `<option value="${p.st}" ${tr.cutNode === p.node ? 'selected' : ''}>${esc(stName(p.node))}</option>`).join('');
+  const dnowTxt = dnow > 0 ? '+' + dnow + '分' : '−' + (-dnow) + '分（早発）';
   $('#mBody').innerHTML = `
-    <div class="m-from">${esc(first.name)} <small>始発</small></div>
-    <div class="m-head">
-      <svg width="52" height="62" viewBox="-26 -32 52 62"><polygon points="-9,-27 9,-27 0,-34" fill="${T.color}" ${tr.dir === 'U' ? '' : 'style="display:none"'}/><polygon points="-9,27 9,27 0,34" fill="${T.color}" ${tr.dir === 'D' ? '' : 'style="display:none"'}/><rect x="-19" y="-19" width="38" height="38" rx="9" fill="${T.color}"/><text x="0" y="1" text-anchor="middle" dominant-baseline="central" font-size="22" font-weight="700" fill="#fff">${esc(T.abbr)}</text></svg>
-      <div class="dest">${esc(lastN.name)} <small>行</small></div>
-      <div class="m-no">${esc(tr.no)}</div>
+    <div class="m-band">
+      <svg width="54" height="64" viewBox="-27 -33 54 64" aria-hidden="true"><polygon points="-9,-27 9,-27 0,-34" fill="${T.color}" ${tr.dir === 'U' ? '' : 'style="display:none"'}/><polygon points="-9,27 9,27 0,34" fill="${T.color}" ${tr.dir === 'D' ? '' : 'style="display:none"'}/><rect x="-19" y="-19" width="38" height="38" rx="10" fill="${T.color}" stroke="#fff" stroke-width="3"/><text x="0" y="1" text-anchor="middle" dominant-baseline="central" font-size="22" font-weight="900" fill="#fff">${esc(T.abbr)}</text></svg>
+      <div>
+        <div class="m-from">${esc(first.name)} 始発</div>
+        <div class="m-dest">${esc(lastN.name)}<small>行</small></div>
+        <div class="m-meta"><span class="m-no">${esc(tr.no)}</span><span>${esc(T.name)}</span><span>運転士 ${esc(drv || '未割当')}</span>${dnow !== 0 ? `<span class="m-dly ${dnow < 0 ? 'early' : ''}">${dnowTxt}</span>` : ''}</div>
+      </div>
     </div>
-    <div class="m-sub">${esc(T.name)} / 運転士: <b>${esc(drv || '未割当')}</b>${dnow !== 0 ? ` / <span style="color:${dnow > 0 ? '#e60012' : '#1b6fa8'}">${dnow > 0 ? '+' + dnow : '−' + (-dnow)}分${dnow < 0 ? '（早発）' : ''}</span>` : ''}</div>
-    ${tr.note ? `<div class="m-sub">${esc(tr.note)}</div>` : ''}
-    ${notes.map((n) => `<div class="m-sub">${n}</div>`).join('')}
-    ${tr.isFinal && tr.nextNo ? `<div class="m-sub">終点到着後、折り返し <b>${esc(tr.nextNo)}</b> は遅延0で出発します</div>` : ''}
+    <div class="m-notes">
+      ${tr.note ? `<div class="m-sub">${esc(tr.note)}</div>` : ''}
+      ${notes.map((n) => `<div class="m-sub ${n.includes('見合わせ') ? 'bad' : ''}">${n}</div>`).join('')}
+      ${tr.isFinal && tr.nextNo ? `<div class="m-sub">終点到着後、折り返し <b>${esc(tr.nextNo)}</b> は遅延0で出発します</div>` : ''}
+    </div>
     ${S.view ? '' : `<div class="m-ctl">
       <span>遅延</span><button data-d="-1">−1</button><button data-d="1">+1</button><input id="mDly" type="number" inputmode="numeric" step="1" min="-99" max="999" value="${d0}" placeholder="分" aria-label="遅延(分)。マイナスは早い"><span class="u">分</span><button data-d="0">0</button>
-      <select id="mDrv">${driverOptions(drv)}</select>
     </div>
+    <div class="m-ctl"><span>運転士</span><select id="mDrv">${driverOptions(drv)}</select></div>
     <div class="m-ctl"><span>打ち切り</span><select id="mCut"><option value="">なし</option>${cutOpts}</select></div>`}
-    <div class="m-cap">到着時刻（定刻・見込み）／始発駅は発車時刻</div>
-    ${rows}`;
+    <div class="m-cap">各駅の到着時刻（上: 見込み／下: 定刻）。始発駅は発車時刻です。</div>
+    <div class="m-list">${rows}</div>`;
   if (S.view) return;
   $('#mBody').querySelectorAll('[data-d]').forEach((b) => b.onclick = () => {
     const v = Number(b.dataset.d);
-    setDelay(tr.no, v === 0 ? 0 : delayOf(tr.no) + v).catch((e) => toast('更新失敗: ' + e.code));
+    setDelay(tr.no, v === 0 ? 0 : delayOf(tr.no) + v).catch((e) => toast(failMsg('更新失敗', e)));
   });
   const di = $('#mDly');
-  const applyDly = () => { const v = Number(di.value); if (di.value === '' || !Number.isFinite(v)) { di.value = delayOf(tr.no); return; } setDelay(tr.no, v).catch((e) => toast('更新失敗: ' + e.code)); };
+  const applyDly = () => { const v = Number(di.value); if (di.value === '' || !Number.isFinite(v)) { di.value = delayOf(tr.no); return; } setDelay(tr.no, v).catch((e) => toast(failMsg('更新失敗', e))); };
   di.onchange = applyDly;
   di.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); di.blur(); } };
-  $('#mDrv').onchange = (e) => setDriver(tr.no, e.target.value).catch((er) => toast('更新失敗: ' + er.code));
+  $('#mDrv').onchange = (e) => setDriver(tr.no, e.target.value).catch((er) => toast(failMsg('更新失敗', er)));
   $('#mCut').onchange = (e) => {
     const v = e.target.value;
     update(roomRef, { ['cuts/' + tr.key]: v === '' ? null : Number(v), updatedAt: stamp() })
       .then(() => toast(v === '' ? '打ち切りを取り消しました' : '打ち切りを設定しました（全員に反映）'))
-      .catch((er) => toast('更新失敗: ' + er.code));
+      .catch((er) => toast(failMsg('更新失敗', er)));
   };
 }
 $('#mClose').onclick = () => { $('#modal').hidden = true; S.selected = null; };
@@ -1002,12 +1028,12 @@ function renderOps() {
     const f = g.segs[0], l = g.segs[g.segs.length - 1];
     const fn = stName(f.pts[0].node), ln = stName(l.pts[l.pts.length - 1].node);
     if (q && !(g.no.toLowerCase().includes(q) || fn.includes(q) || ln.includes(q))) continue;
-    const types = [...new Set(g.segs.map((s) => s.type))].map((ti) => { const T = S.oud.types[ti] || { abbr: '?', color: '#777' }; return `<span class="tb" style="background:${T.color}">${esc(T.abbr)}</span>`; }).join('');
+    const types = [...new Set(g.segs.map((s) => s.type))].map((ti) => { const T = typeOf(ti); return `<span class="tb" style="background:${T.color}">${esc(T.abbr)}</span>`; }).join('');
     const tr = document.createElement('tr');
     tr.innerHTML = `<td><b>${esc(g.no)}</b><br><small>${f.dir === 'D' ? '下り' : '上り'}</small></td><td>${types}</td>
       <td class="mono">${esc(fn)} ${fmtHM(f.pts[0].dep)}発<br>→ ${esc(ln)} ${fmtHM(l.end)}着</td>
       <td><select>${driverOptions(driverOf(g.no))}</select></td>`;
-    tr.querySelector('select').onchange = (e) => setDriver(g.no, e.target.value).then(() => toast(`${g.no}: ${e.target.value || '未割当'}`)).catch((er) => toast('更新失敗: ' + er.code));
+    tr.querySelector('select').onchange = (e) => setDriver(g.no, e.target.value).then(() => toast(`${g.no}: ${e.target.value || '未割当'}`)).catch((er) => toast(failMsg('更新失敗', er)));
     tb.appendChild(tr);
   }
 }
@@ -1037,7 +1063,7 @@ $('#saveGuild').onclick = async () => {
   const v = $('#inGuild').value.trim();
   if (!/^\d{15,22}$/.test(v)) return toast('サーバーIDは数字(17〜20桁程度)で入力してください');
   try { await update(roomRef, { guildId: v, updatedAt: stamp() }); toast('サーバーIDを保存しました'); }
-  catch (e) { toast('保存失敗: ' + e.code); }
+  catch (e) { toast(failMsg('保存失敗', e)); }
 };
 
 /* ================= ② 参加者（Discord ID と呼び名） ================= */
@@ -1071,7 +1097,7 @@ $('#pSave').onclick = async () => {
   try {
     if (Object.keys(up).length) await update(partsRef, up);
     partDirty = false; toast('参加者を保存しました');
-  } catch (e) { toast('保存失敗: ' + e.code); }
+  } catch (e) { toast(failMsg('保存失敗', e)); }
 };
 
 /* ================= ③ ファイル読み込み（選ぶと自動で解析・保存） ================= */
@@ -1100,33 +1126,69 @@ $('#simApply').onclick = () => {
   toast('テスト時刻を適用しました');
 };
 
-/* ================= 駅名・ナンバリング編集 ================= */
-let editNode = null;
+/* ================= 駅名・ナンバリング・停車マーク編集 ================= */
+let editNode = null, editMarks = new Set();
+const markTypes = () => S.oud.types.map((T, i) => ({ i, T })).filter(({ T }) => T.name !== '回送');
+function renderMarkChips() {
+  $('#seMarks').innerHTML = markTypes().map(({ i }) => {
+    const T = typeOf(i);
+    return `<button type="button" class="mk" data-ti="${i}" aria-pressed="${editMarks.has(i)}"><span class="bd" style="background:${esc(T.color)}">${esc(T.abbr)}</span>${esc(T.name || '種別' + i)}</button>`;
+  }).join('') || '<span class="note">種別がありません</span>';
+}
+function renderTypeRows() {
+  $('#seTypes').innerHTML = markTypes().map(({ i, T }) => {
+    const E = typeOf(i);
+    return `<div class="tyrow" data-ti="${i}"><span class="bd" style="background:${esc(E.color)}">${esc(E.abbr)}</span><span>${esc(T.name || '種別' + i)}</span><input type="text" maxlength="2" value="${esc(E.abbr)}" aria-label="${esc(T.name)}の文字"><input type="color" value="${/^#[0-9a-fA-F]{6}$/.test(E.color) ? E.color : '#777777'}" aria-label="${esc(T.name)}の色"></div>`;
+  }).join('');
+}
+$('#seMarks').onclick = (e) => {
+  const b = e.target.closest('.mk'); if (!b) return;
+  const i = Number(b.dataset.ti);
+  editMarks.has(i) ? editMarks.delete(i) : editMarks.add(i);
+  b.setAttribute('aria-pressed', editMarks.has(i));
+};
 function openStEdit(id) {
   editNode = id;
   $('#seOrig').textContent = `元の駅名: ${S.layout.nodes.get(id).name}`;
   $('#seNum').value = stNum(id);
   $('#seName').value = stEdit(id).name || S.layout.nodes.get(id).name;
+  editMarks = new Set(marksOf(id) || S.stopTypes?.get(id) || []);
+  renderMarkChips(); renderTypeRows();
   $('#stEdit').hidden = false;
 }
 $('#seCancel').onclick = () => ($('#stEdit').hidden = true);
 $('#stEdit').addEventListener('click', (e) => { if (e.target.id === 'stEdit') $('#seCancel').click(); });
-async function saveStEdit(num, name) {
+async function saveStEdit(num, name, opts = {}) {
   const orig = S.layout.nodes.get(editNode).name;
   const v = { num: num.trim(), name: name.trim() === orig ? '' : name.trim() };
+  const up = { updatedAt: stamp() };
+  if (!opts.reset) {
+    // 停車マーク: ダイヤどおりと違うときだけ保存
+    const auto = [...(S.stopTypes?.get(editNode) || [])].filter((i) => S.oud.types[i] && S.oud.types[i].name !== '回送').sort((a, b) => a - b).join(',');
+    const cur = [...editMarks].sort((a, b) => a - b).join(',');
+    if (cur !== auto) v.marks = ',' + cur + ',';
+    // 種別マークの文字・色
+    document.querySelectorAll('#seTypes .tyrow').forEach((row) => {
+      const ti = Number(row.dataset.ti), T0 = S.oud.types[ti];
+      const abbr = row.querySelector('input[type=text]').value.trim().slice(0, 2) || T0.abbr;
+      const color = row.querySelector('input[type=color]').value;
+      up['typeEdits/t' + ti] = (abbr === T0.abbr && color.toLowerCase() === String(T0.color).toLowerCase()) ? null : { abbr, color };
+    });
+  }
+  up['stationEdits/s_' + editNode] = v;
   try {
-    await update(roomRef, { ['stationEdits/s_' + editNode]: v, updatedAt: stamp() });
-    $('#stEdit').hidden = true; toast('駅情報を保存しました');
-  } catch (e) { toast('保存失敗: ' + e.code); }
+    await update(roomRef, up);
+    $('#stEdit').hidden = true; toast('駅の表示を保存しました');
+  } catch (e) { toast(failMsg('保存失敗', e)); }
 }
 $('#seSave').onclick = () => saveStEdit($('#seNum').value, $('#seName').value);
-$('#seReset').onclick = () => saveStEdit('', S.layout.nodes.get(editNode).name);
+$('#seReset').onclick = () => saveStEdit('', S.layout.nodes.get(editNode).name, { reset: true });
 
 /* ================= 駅別時刻表 画像ダウンロード ================= */
 function stationNodes() { return [...S.layout.nodes.values()].filter((n) => n.label).sort((a, b) => a.y - b.y || a.x - b.x); }
 function dlStation(id) {
-  const times = collectTimes(S.trains, id, stName, S.oud.types);
-  const cv = drawTimetable({ name: stName(id), num: stNum(id), times, types: S.oud.types });
+  const times = collectTimes(S.trains, id, stName, typesMerged());
+  const cv = drawTimetable({ name: stName(id), num: stNum(id), times, types: typesMerged() });
   return downloadCanvas(cv, `${stNum(id) ? stNum(id) + '_' : ''}${stName(id)}_時刻表.png`);
 }
 $('#ttAll').onclick = async () => {
@@ -1143,7 +1205,7 @@ function renderDiaSel() {
   sel.innerHTML = dias.map((d, i) => `<option value="${i}" ${i === diaIdx() ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
 }
 $('#diaSel').onchange = (e) => update(roomRef, { diaIndex: Number(e.target.value), updatedAt: stamp() })
-  .then(() => toast('表示ダイヤを切り替えました（全員に反映）')).catch((er) => toast('切替失敗: ' + er.code));
+  .then(() => toast('表示ダイヤを切り替えました（全員に反映）')).catch((er) => toast(failMsg('切替失敗', er)));
 
 /* ================= 折り返し判定・遅延の自動リセット ================= */
 // 各運番の「最終区間」が終点に着いたら、その運番の遅延を0に戻す。
